@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Design tokens — Tailwind v4 CSS-first configuration
+   ============================================================ */
+
+@theme {
+  /* Base surfaces */
+  --color-base: #08080a;
+  --color-base-raised: #111114;
+  --color-base-muted: #1a1a1f;
+
+  /* Glass backgrounds — opacity layered over base */
+  --glass-bg-0: rgba(255, 255, 255, 0.03);
+  --glass-bg-1: rgba(255, 255, 255, 0.06);
+  --glass-bg-2: rgba(255, 255, 255, 0.09);
+  --glass-bg-3: rgba(255, 255, 255, 0.13);
+
+  /* Glass borders */
+  --glass-border-subtle: rgba(255, 255, 255, 0.06);
+  --glass-border-default: rgba(255, 255, 255, 0.10);
+  --glass-border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Text hierarchy */
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.60);
+  --text-tertiary: rgba(255, 255, 255, 0.36);
+
+  /* Accent glass tints */
+  --accent-blue-glass: rgba(59, 130, 246, 0.15);
+  --accent-amber-glass: rgba(245, 158, 11, 0.15);
+  --accent-red-glass: rgba(239, 68, 68, 0.15);
+  --accent-green-glass: rgba(34, 197, 94, 0.15);
+
+  /* Box shadow tokens */
+  --shadow-glass-sm: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-glass-md: 0 4px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-glass-lg: 0 8px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shadow-glass-xl: 0 16px 48px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.25), 0 0 40px rgba(59, 130, 246, 0.10);
+  --shadow-glow-amber: 0 0 20px rgba(245, 158, 11, 0.25), 0 0 40px rgba(245, 158, 11, 0.10);
+  --shadow-glow-red: 0 0 20px rgba(239, 68, 68, 0.25), 0 0 40px rgba(239, 68, 68, 0.10);
+
+  /* Easing tokens */
+  --ease-spring-out: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-glass: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Keyframes */
+  --animate-glass-appear: glass-appear 0.25s var(--ease-glass) both;
+  --animate-shimmer: shimmer 2s linear infinite;
+
+  @keyframes glass-appear {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+      backdrop-filter: blur(0px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      backdrop-filter: blur(16px);
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: -200% center;
+    }
+    to {
+      background-position: 200% center;
+    }
+  }
+}
+
+/* ============================================================
+   Base layer
+   ============================================================ */
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-base);
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ============================================================
+   Glass utility classes
+   ============================================================ */
+
+@layer utilities {
+  .glass-panel {
+    background-color: var(--glass-bg-1);
+    border: 1px solid var(--glass-border-default);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-glass-sm);
+  }
+
+  .glass-elevated {
+    background-color: var(--glass-bg-2);
+    border: 1px solid var(--glass-border-default);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-glass-md);
+  }
+
+  .glass-modal {
+    background-color: var(--glass-bg-3);
+    border: 1px solid var(--glass-border-strong);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    box-shadow: var(--shadow-glass-xl);
+  }
+
+  .glass-well {
+    background-color: var(--glass-bg-0);
+    border: 1px solid var(--glass-border-subtle);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .glass-tint-blue {
+    background-color: var(--accent-blue-glass);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .glass-tint-amber {
+    background-color: var(--accent-amber-glass);
+    border-color: rgba(245, 158, 11, 0.2);
+  }
+
+  .glass-tint-red {
+    background-color: var(--accent-red-glass);
+    border-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .glass-hover {
+    transition: background-color 150ms var(--ease-glass),
+      border-color 150ms var(--ease-glass);
+  }
+
+  .glass-hover:hover {
+    background-color: var(--glass-bg-2);
+    border-color: var(--glass-border-strong);
+  }
+}

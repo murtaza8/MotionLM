@@ -1,0 +1,123 @@
+# === Everything from .gitignore ===
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+build/
+out/
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Remotion render output
+out/
+public/renders/
+
+# Temp files from render server
+.render-tmp/
+tmp/
+
+# === Lockfiles — tell Claude if you need these read ===
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# === Large binary assets ===
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+*.tiff
+
+# Video / Audio
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+*.mp3
+*.wav
+*.ogg
+*.flac
+
+# Fonts
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+
+# Documents
+*.pdf
+*.psd
+*.ai
+*.sketch
+*.fig
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# === Build artifacts and minified output ===
+*.min.js
+*.min.css
+*.map
+*.chunk.js
+*.bundle.js
+
+# === Large generated / third-party docs ===
+# Only /Plans/ is relevant — exclude everything else doc-like
+docs/
+documentation/
+*.d.ts.map
+
+# Storybook
+storybook-static/
