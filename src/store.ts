@@ -267,6 +267,10 @@ interface UISlice {
   openVersionHistory: () => void;
   closeVersionHistory: () => void;
   toggleVersionHistory: () => void;
+  generateChatOpen: boolean;
+  openGenerateChat: () => void;
+  closeGenerateChat: () => void;
+  toggleGenerateChat: () => void;
   fileTreeVisible: boolean;
   propertiesPanelVisible: boolean;
   timelineVisible: boolean;
@@ -288,6 +292,11 @@ const createUISlice = (
   closeVersionHistory: () => set(() => ({ versionHistoryOpen: false })),
   toggleVersionHistory: () =>
     set((state) => ({ versionHistoryOpen: !state.versionHistoryOpen })),
+  generateChatOpen: false,
+  openGenerateChat: () => set(() => ({ generateChatOpen: true })),
+  closeGenerateChat: () => set(() => ({ generateChatOpen: false })),
+  toggleGenerateChat: () =>
+    set((state) => ({ generateChatOpen: !state.generateChatOpen })),
   fileTreeVisible: true,
   propertiesPanelVisible: true,
   timelineVisible: true,

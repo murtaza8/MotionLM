@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { History, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
+import { History, PanelLeft, PanelRight, PanelBottom, Sparkles } from "lucide-react";
 
 import { useStore } from "@/store";
 
@@ -9,6 +9,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { TimelinePanel } from "./TimelinePanel";
 import { CommandPalette } from "@/editor/prompt/CommandPalette";
 import { VersionHistory } from "@/editor/history/VersionHistory";
+import { GenerateChat } from "@/editor/generate/GenerateChat";
 
 // ---------------------------------------------------------------------------
 // EditorLayout
@@ -30,6 +31,9 @@ export const EditorLayout = () => {
 
   const versionHistoryOpen = useStore((s) => s.versionHistoryOpen);
   const toggleVersionHistory = useStore((s) => s.toggleVersionHistory);
+
+  const generateChatOpen = useStore((s) => s.generateChatOpen);
+  const toggleGenerateChat = useStore((s) => s.toggleGenerateChat);
 
   const fileTreeVisible = useStore((s) => s.fileTreeVisible);
   const propertiesPanelVisible = useStore((s) => s.propertiesPanelVisible);
@@ -88,6 +92,12 @@ export const EditorLayout = () => {
         return;
       }
 
+      // G — toggle generate chat
+      if (e.key === "g" && !e.metaKey && !e.ctrlKey) {
+        toggleGenerateChat();
+        return;
+      }
+
       // Space — toggle play / pause
       if (e.key === " " && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
@@ -129,6 +139,7 @@ export const EditorLayout = () => {
     closeCommandPalette,
     selectedElementId,
     toggleVersionHistory,
+    toggleGenerateChat,
     toggleFileTree,
     togglePropertiesPanel,
     toggleTimeline,
@@ -138,6 +149,7 @@ export const EditorLayout = () => {
     <>
       <CommandPalette />
       <VersionHistory />
+      <GenerateChat />
 
       {/* Outer shell — flex column filling the viewport */}
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--color-base)]">
@@ -154,6 +166,18 @@ export const EditorLayout = () => {
             >
               {editMode ? "Edit mode — E to exit" : "E to edit"}
             </span>
+
+            <button
+              onClick={toggleGenerateChat}
+              aria-label="Toggle generate chat (G)"
+              title="Toggle generate chat (G)"
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs glass-hover ${generateChatOpen ? "glass-tint-blue text-blue-300" : "text-[var(--text-secondary)]"}`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Generate
+            </button>
+
+            <div className="w-px h-4 bg-[var(--glass-border-subtle)] mx-1" />
 
             <button
               onClick={toggleFileTree}
@@ -196,7 +220,7 @@ export const EditorLayout = () => {
         </div>
 
         {/* Content row — file tree | preview | properties */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="relative flex flex-1 min-h-0 overflow-hidden">
 
           {/* File tree — slides in/out via width transition */}
           <div

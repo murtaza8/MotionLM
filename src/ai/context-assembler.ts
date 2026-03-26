@@ -1,6 +1,7 @@
 import type { TemporalNode, AnimationDescriptor } from "@/engine/temporal/types";
 import type { EditContext } from "@/ai/system-prompt";
 import type { Message } from "@/ai/client";
+import { buildGenerationSystemPrompt } from "@/ai/system-prompt";
 
 // ---------------------------------------------------------------------------
 // StoreSnapshot — the subset of store state needed here
@@ -164,6 +165,53 @@ export function assembleMessages(
       content: [systemPrompt, buildEditPromptContent(context, instruction)].join(
         "\n\n"
       ),
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// assembleGenerationMessages
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the messages array for a generation request.
+ *
+ * Fresh conversation: system prompt + user instruction.
+ * Follow-up: same structure but includes <current-source> so Claude can iterate.
+ */
+export function assembleGenerationMessages(
+  conversationHistory: Message[],
+  newInstruction: string,
+  currentSource: string | null
+): Message[] {
+  const systemPrompt = buildGenerationSystemPrompt();
+
+  if (conversationHistory.length === 0) {
+    // Fresh generation — no existing source
+    return [
+      {
+        role: "user",
+        content: [systemPrompt, `<instruction>${newInstruction}</instruction>`].join(
+          "\n\n"
+        ),
+      },
+    ];
+  }
+
+  // Follow-up — pass history plus the new instruction with current source
+  const parts: string[] = [];
+  if (currentSource !== null) {
+    parts.push("<current-source>");
+    parts.push(currentSource);
+    parts.push("</current-source>");
+  }
+  parts.push(`<instruction>${newInstruction}</instruction>`);
+
+  return [
+    ...conversationHistory,
+    {
+      role: "user",
+      content: parts.join("\n"),
     },
   ];
 }

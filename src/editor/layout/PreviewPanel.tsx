@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Player } from "@remotion/player";
 import type { PlayerRef, CallbackListener } from "@remotion/player";
 
-import { compileComposition } from "@/engine/compiler";
+import { compileWithVFS } from "@/engine/compiler";
 import { useStore } from "@/store";
 import {
   SIMPLE_TEXT_SOURCE,
@@ -30,9 +30,16 @@ export const PreviewPanel = () => {
   const setCurrentFrame = useStore((s) => s.setCurrentFrame);
   const durationInFrames = useStore((s) => s.durationInFrames);
   const activeFilePath = useStore((s) => s.activeFilePath);
-  const activeCode = useStore((s) =>
-    activeFilePath ? s.files.get(activeFilePath)?.activeCode : undefined
-  );
+
+  // A stable string key that changes when any file's content changes,
+  // used to trigger recompilation when dependencies are edited.
+  const filesKey = useStore((s) => {
+    const parts: string[] = [];
+    for (const [path, file] of s.files) {
+      parts.push(`${path}:${file.draftCode ?? file.activeCode}`);
+    }
+    return parts.join("|");
+  });
 
   const [component, setComponent] = useState<React.ComponentType | null>(null);
   const playerRef = useRef<PlayerRef>(null);
@@ -56,12 +63,21 @@ export const PreviewPanel = () => {
     setCompositionMeta(SIMPLE_TEXT_DURATION, FPS);
   }, [setActiveCode, setActiveFile, setCompositionMeta]);
 
-  // Compile whenever activeCode or activeFilePath changes
+  // Compile whenever any VFS file content changes or the active file switches.
+  // Reading files from getState() inside the effect avoids stale closure issues
+  // while keeping filesKey (the serialised hash) as the reactive trigger.
   useEffect(() => {
-    if (!activeCode || !activeFilePath) return;
+    if (!activeFilePath) return;
+
+    const { files } = useStore.getState();
+    const sourcesMap = new Map<string, string>();
+    for (const [path, file] of files) {
+      const src = file.draftCode ?? file.activeCode;
+      if (src) sourcesMap.set(path, src);
+    }
 
     setCompilationStatus(activeFilePath, "compiling");
-    const result = compileComposition(activeCode);
+    const result = compileWithVFS(activeFilePath, sourcesMap);
 
     if (result.ok) {
       setComponent(() => result.Component);
@@ -70,7 +86,7 @@ export const PreviewPanel = () => {
       setComponent(null);
       setCompilationStatus(activeFilePath, "error", result.error);
     }
-  }, [activeCode, activeFilePath, setCompilationStatus]);
+  }, [filesKey, activeFilePath, setCompilationStatus]);
 
   // Measure the panel container and compute the largest Player size that fits
   // while maintaining the 1920×1080 aspect ratio.

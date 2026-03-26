@@ -597,7 +597,7 @@ The following changes were made relative to the original architecture plan in `/
 **Goal**: A chat interface for generating initial compositions from scratch, a local render server for MP4 export, the CLI entry point, and multi-file composition support.
 
 ### Task 5.1: Generation chat interface
-`[ ]`
+`[x]` (src/editor/generate/GenerateChat.tsx, src/ai/system-prompt.ts, src/ai/context-assembler.ts, src/store.ts, src/editor/layout/EditorLayout.tsx)
 
 **Target files**: `src/editor/generate/GenerateChat.tsx`, `src/ai/system-prompt.ts` (extend)
 
@@ -620,7 +620,7 @@ The following changes were made relative to the original architecture plan in `/
 - `npm run typecheck` passes
 
 ### Task 5.2: Render server for MP4 export
-`[ ]`
+`[x]` (server/render-server.ts, server/render-handler.ts, tsconfig.server.json, package.json)
 
 **Target files**: `server/render-server.ts`, `server/render-handler.ts`
 
@@ -648,7 +648,7 @@ The following changes were made relative to the original architecture plan in `/
 - `npm run typecheck` passes
 
 ### Task 5.3: CLI entry point
-`[ ]`
+`[x]` (bin/motionlm.js, package.json)
 
 **Target files**: `bin/motionlm.js`, `package.json` (update bin field)
 
@@ -671,7 +671,7 @@ The following changes were made relative to the original architecture plan in `/
 - Export flow works end-to-end: make a composition, click export, MP4 renders
 
 ### Task 5.4: Multi-file composition support
-`[ ]`
+`[x]` (src/engine/babel-plugins/vfs-import-transformer.ts, src/engine/compiler.ts, src/editor/layout/PreviewPanel.tsx)
 
 **Target files**: `src/engine/compiler.ts` (extend)
 

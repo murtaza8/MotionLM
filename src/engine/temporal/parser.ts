@@ -553,6 +553,23 @@ export const parseTemporalMap = (sourceCode: string): TemporalMap => {
             path.node.openingElement.loc?.start.line ?? state.sequenceCounter
           }`;
 
+          // Add Sequence as a TemporalNode so the timeline panel can display it.
+          // sequencePath is the parent stack (before pushing this Sequence).
+          const parentSeqPath = state.sequenceStack.map((s) => s.id);
+          const line = path.node.openingElement.loc?.start.line ?? 0;
+          const endLine = path.node.openingElement.loc?.end.line ?? line;
+          if (!state.nodes.has(id)) {
+            state.nodes.set(id, {
+              id,
+              sourceRange: [line, endLine],
+              componentName: "Sequence",
+              activeFrameRange: dur > 0 ? [absoluteFrom, absoluteFrom + dur] : null,
+              animations: [],
+              sequencePath: parentSeqPath,
+            });
+            state.nodeToFunction.set(id, enclosingFunctionName(path));
+          }
+
           state.sequenceStack.push({ id, from: localFrom, durationInFrames: dur, absoluteFrom });
         },
         exit(path) {

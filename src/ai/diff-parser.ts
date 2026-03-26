@@ -126,12 +126,14 @@ async function collectStream(
 
 function buildRetryMessages(
   originalMessages: Message[],
-  failedCode: string,
+  failedEdit: EditResponse,
   compileError: string
 ): Message[] {
+  // Mirror the full response shape Claude originally produced so the retry
+  // conversation is coherent.
   const assistantTurn: Message = {
     role: "assistant",
-    content: JSON.stringify({ code: failedCode }),
+    content: JSON.stringify(failedEdit),
   };
 
   const retryTurn: Message = {
@@ -196,7 +198,7 @@ export async function applyEdit(params: {
     // Build retry conversation and stream a new response
     const retryMessages = buildRetryMessages(
       currentMessages,
-      currentEdit.code,
+      currentEdit,
       compileError
     );
 

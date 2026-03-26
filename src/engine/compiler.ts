@@ -1,5 +1,6 @@
 import React from "react";
 import * as Babel from "@babel/standalone";
+import { parse } from "@babel/parser";
 import {
   AbsoluteFill,
   useCurrentFrame,
@@ -15,6 +16,10 @@ import { useEffect, useRef } from "react";
 import { useStore } from "@/store";
 import { importStripperPlugin } from "./babel-plugins/import-stripper";
 import { sourceMapPlugin } from "./babel-plugins/source-map";
+import {
+  makeVfsImportTransformerPlugin,
+  resolveVFSImport,
+} from "./babel-plugins/vfs-import-transformer";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,7 +98,6 @@ export const compileComposition = (sourceCode: string): CompileResult => {
   const fnBody = `${transformedCode}\n${assignmentLines}`;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const fn = new Function(scopeParam, ...API_PARAM_NAMES, fnBody);
     fn(moduleScope, ...API_PARAM_VALUES);
   } catch (err: unknown) {
@@ -113,6 +117,259 @@ export const compileComposition = (sourceCode: string): CompileResult => {
 
   return { ok: true, Component: component as React.ComponentType };
 };
+
+// ---------------------------------------------------------------------------
+// compileWithVFS — multi-file entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Compiles an entire VFS starting from `entryPath`.
+ *
+ * Pipeline:
+ * 1. Build an import dependency graph by parsing each reachable file.
+ * 2. Topological sort to get a dependency-first compile order.
+ * 3. Compile each file in order; each compiled file's exports are stored in
+ *    a `vfsRegistry` that is injected into subsequent compilations via
+ *    `__vfsRegistry__`.
+ * 4. Extract the root React component from the entry file's exports.
+ *
+ * Falls through to the single-file path when only one file is present.
+ */
+export const compileWithVFS = (
+  entryPath: string,
+  files: Map<string, string>
+): CompileResult => {
+  if (files.size <= 1) {
+    const source = files.get(entryPath) ?? "";
+    return compileComposition(source);
+  }
+
+  // --- 1. Build dependency graph ---
+  const depGraphResult = buildDepGraph(entryPath, files);
+  if ("error" in depGraphResult) {
+    return { ok: false, error: depGraphResult.error };
+  }
+  const depGraph = depGraphResult.graph;
+
+  // --- 2. Topological sort ---
+  const sortResult = topoSort(entryPath, depGraph);
+  if ("error" in sortResult) {
+    return { ok: false, error: sortResult.error };
+  }
+
+  // --- 3. Compile files in dependency-first order ---
+  const vfsPaths = new Set(files.keys());
+  // Registry: path → exported names → values
+  const vfsRegistry: Record<string, Record<string, unknown>> = {};
+
+  for (const filePath of sortResult.order) {
+    const source = files.get(filePath);
+    if (source === undefined) continue;
+
+    const fileResult = compileSingleFile(
+      source,
+      filePath,
+      vfsPaths,
+      vfsRegistry
+    );
+    if (!fileResult.ok) return { ok: false, error: fileResult.error };
+
+    vfsRegistry[filePath] = fileResult.exports;
+  }
+
+  // --- 4. Extract root component from entry file ---
+  const entryExports = vfsRegistry[entryPath];
+  if (!entryExports) {
+    return { ok: false, error: "Entry file produced no exports." };
+  }
+
+  const component = resolveRootComponent(entryExports);
+  if (!component) {
+    return {
+      ok: false,
+      error:
+        "No React component found in entry file. Make sure the entry exports a function component.",
+    };
+  }
+
+  return { ok: true, Component: component as React.ComponentType };
+};
+
+// ---------------------------------------------------------------------------
+// compileSingleFile — compiles one file with VFS registry injected
+// ---------------------------------------------------------------------------
+
+const REGISTRY_PARAM = "__vfsRegistry__";
+
+function compileSingleFile(
+  source: string,
+  filePath: string,
+  vfsPaths: Set<string>,
+  vfsRegistry: Record<string, Record<string, unknown>>
+): { ok: true; exports: Record<string, unknown> } | { ok: false; error: string } {
+  let transformedCode: string;
+  try {
+    const result = Babel.transform(source, {
+      presets: ["react", "typescript"],
+      plugins: [
+        makeVfsImportTransformerPlugin(vfsPaths, filePath),
+        importStripperPlugin,
+        sourceMapPlugin,
+      ],
+      filename: filePath.replace(/^\/+/, "") || "file.tsx",
+    });
+
+    if (!result.code) {
+      return { ok: false, error: `Babel transform of ${filePath} produced no output.` };
+    }
+    transformedCode = result.code;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: humanizeTransformError(message) };
+  }
+
+  const moduleScope: Record<string, unknown> = {};
+  const scopeParam = "__moduleScope__";
+
+  const componentNames = extractTopLevelNames(transformedCode);
+  const assignmentLines = componentNames
+    .map((name) => `try { ${scopeParam}["${name}"] = ${name}; } catch(_) {}`)
+    .join("\n");
+
+  const fnBody = `${transformedCode}\n${assignmentLines}`;
+
+  try {
+    const fn = new Function(REGISTRY_PARAM, scopeParam, ...API_PARAM_NAMES, fnBody);
+    fn(vfsRegistry, moduleScope, ...API_PARAM_VALUES);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: humanizeRuntimeError(message) };
+  }
+
+  return { ok: true, exports: moduleScope };
+}
+
+// ---------------------------------------------------------------------------
+// Dependency graph — parse imports to find VFS inter-file dependencies
+// ---------------------------------------------------------------------------
+
+type DepGraph = Map<string, string[]>;
+
+function buildDepGraph(
+  entryPath: string,
+  files: Map<string, string>
+): { graph: DepGraph } | { error: string } {
+  const vfsPaths = new Set(files.keys());
+  const graph: DepGraph = new Map();
+
+  // BFS from entry to discover all reachable VFS files
+  const queue: string[] = [entryPath];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const filePath = queue.shift()!;
+    if (visited.has(filePath)) continue;
+    visited.add(filePath);
+
+    const source = files.get(filePath);
+    if (source === undefined) {
+      graph.set(filePath, []);
+      continue;
+    }
+
+    const deps = extractVFSImports(source, filePath, vfsPaths);
+    graph.set(filePath, deps);
+
+    for (const dep of deps) {
+      if (!visited.has(dep)) queue.push(dep);
+    }
+  }
+
+  return { graph };
+}
+
+/** Uses @babel/parser to extract relative imports that resolve to VFS paths. */
+function extractVFSImports(
+  source: string,
+  filePath: string,
+  vfsPaths: Set<string>
+): string[] {
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(source, {
+      sourceType: "module",
+      plugins: ["typescript", "jsx"],
+      errorRecovery: true,
+    });
+  } catch {
+    return [];
+  }
+
+  const imports: string[] = [];
+  for (const node of ast.program.body) {
+    if (node.type !== "ImportDeclaration") continue;
+    const importSource = node.source.value;
+    const resolved = resolveVFSImport(importSource, filePath, vfsPaths);
+    if (resolved !== null) imports.push(resolved);
+  }
+
+  return imports;
+}
+
+// ---------------------------------------------------------------------------
+// Topological sort with cycle detection
+// ---------------------------------------------------------------------------
+
+function topoSort(
+  entryPath: string,
+  graph: DepGraph
+): { order: string[] } | { error: string } {
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const order: string[] = [];
+
+  function dfs(node: string): string[] | null {
+    if (visiting.has(node)) return [node];
+    if (visited.has(node)) return null;
+
+    visiting.add(node);
+
+    for (const dep of graph.get(node) ?? []) {
+      const cycle = dfs(dep);
+      if (cycle !== null) {
+        // Append current node to build the cycle path (will be reversed after)
+        if (cycle[cycle.length - 1] !== node) cycle.push(node);
+        return cycle;
+      }
+    }
+
+    visiting.delete(node);
+    visited.add(node);
+    // Post-order push ensures dependencies precede dependents
+    order.push(node);
+    return null;
+  }
+
+  // Visit entry first, then any other reachable nodes
+  const cycle = dfs(entryPath);
+  if (cycle !== null) {
+    const path = [...cycle].reverse().join(" → ");
+    return { error: `Circular dependency detected: ${path}` };
+  }
+
+  // Visit any remaining graph nodes (disconnected files — compile them too)
+  for (const node of graph.keys()) {
+    if (!visited.has(node)) {
+      const c = dfs(node);
+      if (c !== null) {
+        const path = [...c].reverse().join(" → ");
+        return { error: `Circular dependency detected: ${path}` };
+      }
+    }
+  }
+
+  return { order };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
