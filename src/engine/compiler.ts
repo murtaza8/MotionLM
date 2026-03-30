@@ -13,6 +13,17 @@ import {
   staticFile,
 } from "remotion";
 import { useEffect, useRef } from "react";
+
+// Stubs for registerRoot / Composition — these are part of Remotion's bundler
+// registration pattern, which Claude sometimes generates. In the browser
+// Player context they are not needed and must be no-ops to avoid runtime errors.
+const registerRoot = (_root: unknown): void => {
+  // no-op: the Player handles composition mounting directly
+};
+
+// Composition renders nothing in the browser Player context — we only need
+// the actual composition component, which resolveRootComponent extracts.
+const CompositionStub = (): null => null;
 import { useStore } from "@/store";
 import { importStripperPlugin } from "./babel-plugins/import-stripper";
 import { sourceMapPlugin } from "./babel-plugins/source-map";
@@ -44,6 +55,8 @@ const REMOTION_APIS = {
   Easing,
   Img,
   staticFile,
+  registerRoot,
+  Composition: CompositionStub,
 } as const;
 
 const API_PARAM_NAMES = Object.keys(REMOTION_APIS);
@@ -399,27 +412,38 @@ const extractTopLevelNames = (code: string): string[] => {
  *    letter (React component convention)
  * 2. Any function value
  */
+// Names used by Remotion's registerRoot pattern — these are wrappers, not
+// the actual composition component we want to render in the player.
+const ROOT_WRAPPER_NAMES = new Set(["RemotionRoot", "Root", "registerRoot"]);
+
 const resolveRootComponent = (
   scope: Record<string, unknown>
 ): React.ComponentType | null => {
   const entries = Object.entries(scope);
-  let lastComponent: React.ComponentType | null = null;
+  // Collect all uppercase-named functions in declaration order
+  const candidates: React.ComponentType[] = [];
 
   for (const [, value] of entries) {
     if (typeof value === "function") {
       const name = (value as { name?: string }).name ?? "";
-      if (/^[A-Z]/.test(name)) {
-        lastComponent = value as React.ComponentType;
+      if (/^[A-Z]/.test(name) && !ROOT_WRAPPER_NAMES.has(name)) {
+        candidates.push(value as React.ComponentType);
       }
     }
   }
 
-  if (lastComponent) return lastComponent;
+  if (candidates.length > 0) {
+    // Return the last non-wrapper component (the composition itself)
+    return candidates[candidates.length - 1];
+  }
 
-  // Fallback: any function
+  // Fallback: any function that isn't a known wrapper
   for (const [, value] of entries) {
     if (typeof value === "function") {
-      return value as React.ComponentType;
+      const name = (value as { name?: string }).name ?? "";
+      if (!ROOT_WRAPPER_NAMES.has(name)) {
+        return value as React.ComponentType;
+      }
     }
   }
 

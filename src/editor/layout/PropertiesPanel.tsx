@@ -154,7 +154,21 @@ export const PropertiesPanel = () => {
 
   const node =
     selectedElementId !== null && temporalMap !== null
-      ? temporalMap.nodes.get(selectedElementId) ?? null
+      ? (temporalMap.nodes.get(selectedElementId) ?? null)
+      : null;
+
+  // When an element is selected but not in the temporal map, extract basic
+  // info from the element ID format "{componentName}:{lineNumber}".
+  const fallbackSelection =
+    selectedElementId !== null && node === null
+      ? (() => {
+          const colonIdx = selectedElementId.lastIndexOf(":");
+          const componentName =
+            colonIdx !== -1 ? selectedElementId.slice(0, colonIdx) : selectedElementId;
+          const line =
+            colonIdx !== -1 ? parseInt(selectedElementId.slice(colonIdx + 1), 10) : 0;
+          return { componentName, line: Number.isFinite(line) ? line : 0 };
+        })()
       : null;
 
   const statusColor =
@@ -209,6 +223,28 @@ export const PropertiesPanel = () => {
       <div className="flex-1 overflow-y-auto">
         {node !== null && selectedFrame !== null ? (
           <ElementSection node={node} selectedFrame={selectedFrame} />
+        ) : fallbackSelection !== null ? (
+          <div className="flex flex-col gap-3 p-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">
+                Element
+              </span>
+              <span className="text-sm font-medium text-[var(--text-primary)] font-mono">
+                {fallbackSelection.componentName}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-widest text-[var(--text-tertiary)]">
+                Source line
+              </span>
+              <span className="text-xs text-[var(--text-secondary)] font-mono">
+                {fallbackSelection.line}
+              </span>
+            </div>
+            <div className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              No animation data. Open Cmd+K to edit this element.
+            </div>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full px-4">
             <span className="text-xs text-[var(--text-tertiary)] text-center leading-relaxed">

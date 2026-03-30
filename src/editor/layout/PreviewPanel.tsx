@@ -30,6 +30,7 @@ export const PreviewPanel = () => {
   const setCurrentFrame = useStore((s) => s.setCurrentFrame);
   const durationInFrames = useStore((s) => s.durationInFrames);
   const activeFilePath = useStore((s) => s.activeFilePath);
+  const editMode = useStore((s) => s.editMode);
 
   // A stable string key that changes when any file's content changes,
   // used to trigger recompilation when dependencies are edited.
@@ -133,17 +134,28 @@ export const PreviewPanel = () => {
     const onPause: CallbackListener<"pause"> = () => setPlaying(false);
     const onFrameUpdate: CallbackListener<"frameupdate"> = ({ detail }) =>
       setCurrentFrame(detail.frame);
+    const onError: CallbackListener<"error"> = ({ detail }) => {
+      if (activeFilePath) {
+        setCompilationStatus(
+          activeFilePath,
+          "error",
+          `Render error: ${detail.error.message}`
+        );
+      }
+    };
 
     player.addEventListener("play", onPlay);
     player.addEventListener("pause", onPause);
     player.addEventListener("frameupdate", onFrameUpdate);
+    player.addEventListener("error", onError);
 
     return () => {
       player.removeEventListener("play", onPlay);
       player.removeEventListener("pause", onPause);
       player.removeEventListener("frameupdate", onFrameUpdate);
+      player.removeEventListener("error", onError);
     };
-  }, [component, setPlaying, setCurrentFrame]);
+  }, [component, activeFilePath, setPlaying, setCurrentFrame, setCompilationStatus]);
 
   const hasSize = playerSize.width > 0 && playerSize.height > 0;
 
@@ -175,7 +187,7 @@ export const PreviewPanel = () => {
             compositionHeight={COMPOSITION_HEIGHT}
             fps={FPS}
             durationInFrames={durationInFrames > 0 ? durationInFrames : DEFAULT_DURATION}
-            controls
+            controls={!editMode}
             loop
             style={{ width: playerSize.width, height: playerSize.height }}
             acknowledgeRemotionLicense

@@ -238,10 +238,7 @@ Easing.bezier(x1, y1, x2, y2)
 
 <generation-rules>
 1. Composition defaults: 1920x1080, 30fps. Choose a duration appropriate for the request — e.g. 150 frames (5s) for short animations, 300 frames (10s) for longer ones.
-2. Export a single named component (e.g. export const MyComposition = ...) and a registerRoot call at the bottom using the Remotion composition registration pattern:
-   import { Composition, registerRoot } from 'remotion';
-   export const RemotionRoot = () => <Composition id="Main" component={MyComposition} durationInFrames={150} fps={30} width={1920} height={1080} />;
-   registerRoot(RemotionRoot);
+2. Export a single named composition component using const arrow function syntax (e.g. export const MyComposition = () => { ... }). Do NOT include registerRoot, RemotionRoot, or Composition registration boilerplate — the player handles composition mounting directly.
 3. All imports must come only from 'remotion' — no external packages, no CSS files, no image imports (unless the user explicitly asks for assets).
 4. All components must be valid React functional components using const arrow function syntax.
 5. Never use require() or dynamic imports.

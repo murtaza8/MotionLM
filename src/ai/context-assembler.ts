@@ -108,7 +108,7 @@ export function assembleEditContext(store: StoreSnapshot): EditContext {
 
   const frame = store.selectedFrame ?? 0;
 
-  if (store.selectedElementId === null || store.temporalMap === null) {
+  if (store.selectedElementId === null) {
     return {
       sourceCode,
       filePath,
@@ -117,28 +117,46 @@ export function assembleEditContext(store: StoreSnapshot): EditContext {
     };
   }
 
-  const node = store.temporalMap.nodes.get(store.selectedElementId);
-  if (node === undefined) {
+  const node = store.temporalMap?.nodes.get(store.selectedElementId) ?? null;
+
+  if (node !== null) {
+    const frameNarrative = buildFrameNarrative(node, frame);
     return {
       sourceCode,
       filePath,
       currentFrame: frame,
-      selectedElement: null,
+      selectedElement: {
+        id: node.id,
+        componentName: node.componentName,
+        lineStart: node.sourceRange[0],
+        lineEnd: node.sourceRange[1],
+        frameNarrative,
+      },
     };
   }
 
-  const frameNarrative = buildFrameNarrative(node, frame);
+  // Element is not in temporal map (e.g. generated composition without Sequence
+  // wrappers). Extract component name and line from the element ID format:
+  // "{componentName}:{lineNumber}" — still useful for targeting Claude's edit.
+  const colonIdx = store.selectedElementId.lastIndexOf(":");
+  const componentName =
+    colonIdx !== -1
+      ? store.selectedElementId.slice(0, colonIdx)
+      : store.selectedElementId;
+  const lineNumber =
+    colonIdx !== -1 ? parseInt(store.selectedElementId.slice(colonIdx + 1), 10) : 0;
+  const lineStart = Number.isFinite(lineNumber) ? lineNumber : 0;
 
   return {
     sourceCode,
     filePath,
     currentFrame: frame,
     selectedElement: {
-      id: node.id,
-      componentName: node.componentName,
-      lineStart: node.sourceRange[0],
-      lineEnd: node.sourceRange[1],
-      frameNarrative,
+      id: store.selectedElementId,
+      componentName,
+      lineStart,
+      lineEnd: lineStart,
+      frameNarrative: `Frame ${frame}. Selected ${componentName} element at line ${lineStart}. No animation data available — edit based on source location.`,
     },
   };
 }

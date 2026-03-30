@@ -160,7 +160,7 @@ export async function* sendEditRequest(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4096,
+        max_tokens: 8192,
         stream: true,
         messages,
       }),
