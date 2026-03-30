@@ -1,7 +1,8 @@
-import { FileCode2, FilePlus, Upload } from "lucide-react";
+import { FileCode2, FilePlus, Save, Upload } from "lucide-react";
 import { useRef } from "react";
 
 import { useStore } from "@/store";
+import { openFileFromDisk, saveFileToDisk } from "@/persistence/filesystem";
 
 export const FileTreePanel = () => {
   const files = useStore((s) => s.files);
@@ -20,6 +21,14 @@ export const FileTreePanel = () => {
     const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
     createFile(path, "");
     setActiveFile(path);
+  };
+
+  const handleOpen = async () => {
+    const result = await openFileFromDisk();
+    if (!result.ok) {
+      // FSAA not supported — fall back to hidden file input
+      fileInputRef.current?.click();
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,6 +63,11 @@ export const FileTreePanel = () => {
       alert("Failed to read the file. Please try again.");
     };
     reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    if (!activeFilePath) return;
+    await saveFileToDisk(activeFilePath);
   };
 
   return (
@@ -100,11 +114,19 @@ export const FileTreePanel = () => {
           <span>New File</span>
         </button>
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleOpen}
           className="flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
-          title="Upload .tsx / .ts file"
+          title="Open .tsx / .ts file from disk"
         >
           <Upload className="w-4 h-4 shrink-0" />
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!activeFilePath}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Save active file (Cmd+S)"
+        >
+          <Save className="w-4 h-4 shrink-0" />
         </button>
         <input
           ref={fileInputRef}

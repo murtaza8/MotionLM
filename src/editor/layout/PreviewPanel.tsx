@@ -57,8 +57,10 @@ export const PreviewPanel = () => {
   // before Remotion's internal ResizeObserver fires, causing scale=1.
   const [playerSize, setPlayerSize] = useState({ width: 0, height: 0 });
 
-  // Load sample into VFS on mount
+  // Load sample into VFS on mount — skip if VFS was restored from IDB
   useEffect(() => {
+    const { files } = useStore.getState();
+    if (files.size > 0) return;
     setActiveCode(SAMPLE_FILE_PATH, SIMPLE_TEXT_SOURCE);
     setActiveFile(SAMPLE_FILE_PATH);
     setCompositionMeta(SIMPLE_TEXT_DURATION, FPS);

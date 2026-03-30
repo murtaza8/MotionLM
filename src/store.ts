@@ -22,6 +22,7 @@ export interface VFSFile {
 interface VFSSlice {
   files: Map<string, VFSFile>;
   activeFilePath: string | null;
+  fileHandles: Map<string, FileSystemFileHandle>;
   setActiveCode: (path: string, code: string) => void;
   setDraftCode: (path: string, code: string) => void;
   promoteDraft: (path: string) => void;
@@ -33,6 +34,8 @@ interface VFSSlice {
   ) => void;
   setActiveFile: (path: string) => void;
   createFile: (path: string, code: string) => void;
+  setFileHandle: (path: string, handle: FileSystemFileHandle) => void;
+  clearFileHandle: (path: string) => void;
 }
 
 const createVFSSlice = (
@@ -40,6 +43,7 @@ const createVFSSlice = (
 ): VFSSlice => ({
   files: new Map(),
   activeFilePath: null,
+  fileHandles: new Map(),
 
   setActiveCode: (path, code) =>
     set((state) => {
@@ -142,6 +146,20 @@ const createVFSSlice = (
         compilationError: null,
       });
       return { files: updated };
+    }),
+
+  setFileHandle: (path, handle) =>
+    set((state) => {
+      const updated = new Map(state.fileHandles);
+      updated.set(path, handle);
+      return { fileHandles: updated };
+    }),
+
+  clearFileHandle: (path) =>
+    set((state) => {
+      const updated = new Map(state.fileHandles);
+      updated.delete(path);
+      return { fileHandles: updated };
     }),
 });
 
@@ -259,6 +277,11 @@ const createSelectionSlice = (
 // ---------------------------------------------------------------------------
 
 interface UISlice {
+  hydrated: boolean;
+  setHydrated: (v: boolean) => void;
+  settingsPanelOpen: boolean;
+  openSettingsPanel: () => void;
+  closeSettingsPanel: () => void;
   commandPaletteOpen: boolean;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
@@ -271,6 +294,9 @@ interface UISlice {
   openGenerateChat: () => void;
   closeGenerateChat: () => void;
   toggleGenerateChat: () => void;
+  exportModalOpen: boolean;
+  openExportModal: () => void;
+  closeExportModal: () => void;
   fileTreeVisible: boolean;
   propertiesPanelVisible: boolean;
   timelineVisible: boolean;
@@ -282,6 +308,11 @@ interface UISlice {
 const createUISlice = (
   set: (fn: (state: StoreState) => Partial<StoreState>) => void
 ): UISlice => ({
+  hydrated: false,
+  setHydrated: (v) => set(() => ({ hydrated: v })),
+  settingsPanelOpen: false,
+  openSettingsPanel: () => set(() => ({ settingsPanelOpen: true })),
+  closeSettingsPanel: () => set(() => ({ settingsPanelOpen: false })),
   commandPaletteOpen: false,
   openCommandPalette: () => set(() => ({ commandPaletteOpen: true })),
   closeCommandPalette: () => set(() => ({ commandPaletteOpen: false })),
@@ -297,6 +328,9 @@ const createUISlice = (
   closeGenerateChat: () => set(() => ({ generateChatOpen: false })),
   toggleGenerateChat: () =>
     set((state) => ({ generateChatOpen: !state.generateChatOpen })),
+  exportModalOpen: false,
+  openExportModal: () => set(() => ({ exportModalOpen: true })),
+  closeExportModal: () => set(() => ({ exportModalOpen: false })),
   fileTreeVisible: true,
   propertiesPanelVisible: true,
   timelineVisible: true,

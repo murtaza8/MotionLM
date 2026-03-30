@@ -867,6 +867,7 @@ Tasks within Phase 4 (4.1-4.5) can be worked in parallel. Tasks within Phase 5 a
 | Date | Change | Reason |
 |------|--------|--------|
 | 2026-03-17 | Initial plan created | Granular task breakdown from architecture critique |
+| 2026-03-31 | Add persistence layer (IndexedDB auto-save + File System Access API) | VFS lost on every browser refresh — editor needs to survive page reloads to be usable. See `Plans/persistence-plan.md`. Files: `src/persistence/idb.ts`, `src/persistence/filesystem.ts`, `src/App.tsx`, `src/store.ts`, `src/editor/layout/PreviewPanel.tsx`, `src/editor/layout/FileTreePanel.tsx`, `src/editor/layout/EditorLayout.tsx` |
 | -- | Moved Liquid Glass design tokens to Task 0.2 | Original plan deferred design system setup; causes inconsistent styling in early phases |
 | -- | Incremental store slices across phases | Building all 7 slices in Phase 0 is premature; slices should land with their backing logic |
 | -- | Added minimal editor shell to Phase 0 (Task 0.5) | Phases 1-3 need a visual surface for testing |

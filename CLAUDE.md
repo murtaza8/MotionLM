@@ -222,6 +222,7 @@ npm run test          # Vitest (unit tests for engine/temporal and engine/compil
 ## Key Reference
 
 - Full architecture plan and build phases: `/Plans/motionlm_complete_architecture_plan.md`
+- Ad-hoc changes log (changes outside PLAN.md): `CHANGES.md`
 - Remotion v4 docs: https://www.remotion.dev/docs
 - @babel/standalone usage: https://babeljs.io/docs/babel-standalone
 
@@ -229,7 +230,7 @@ npm run test          # Vitest (unit tests for engine/temporal and engine/compil
 1. The Source of Truth
 - PLAN.md at the project root is the authoritative roadmap.
 
-- Context Loading: At the start of every session or when context is cleared, read PLAN.md to determine the current state.
+- Context Loading: At the start of every session or when context is cleared, read PLAN.md to determine the current task state, then read CHANGES.md to pick up any ad-hoc changes made outside PLAN.md.
 
 - Refer to `/Plans/motionlm_complete_archit
   ecture_plan.md` when a task is ambiguous

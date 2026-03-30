@@ -1,6 +1,9 @@
-import { useStore } from "@/store";
-import type { AnimationDescriptor, TemporalNode } from "@/engine/temporal/types";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+
+import { useStore } from "@/store";
+import { useEditStream } from "@/ai/useEditStream";
+import type { AnimationDescriptor, TemporalNode } from "@/engine/temporal/types";
 
 // ---------------------------------------------------------------------------
 // Animation row
@@ -147,6 +150,19 @@ export const PropertiesPanel = () => {
 
   const discardDraft = useStore((s) => s.discardDraft);
 
+  const [instruction, setInstruction] = useState("");
+  const { submit, isStreaming, error: editError, clearError } = useEditStream();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the edit textarea when an element is selected
+  useEffect(() => {
+    if (selectedElementId !== null) {
+      // Small delay so the panel finishes rendering before focusing
+      const id = setTimeout(() => textareaRef.current?.focus(), 50);
+      return () => clearTimeout(id);
+    }
+  }, [selectedElementId]);
+
   const activeFile = activeFilePath !== null ? files.get(activeFilePath) : undefined;
   const compilationStatus = activeFile?.compilationStatus ?? "idle";
   const compilationError = activeFile?.compilationError ?? null;
@@ -219,8 +235,8 @@ export const PropertiesPanel = () => {
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Main content — scrollable */}
+      <div className="flex-1 overflow-y-auto min-h-0">
         {node !== null && selectedFrame !== null ? (
           <ElementSection node={node} selectedFrame={selectedFrame} />
         ) : fallbackSelection !== null ? (
@@ -242,7 +258,7 @@ export const PropertiesPanel = () => {
               </span>
             </div>
             <div className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
-              No animation data. Open Cmd+K to edit this element.
+              No animation data found for this element.
             </div>
           </div>
         ) : (
@@ -253,6 +269,69 @@ export const PropertiesPanel = () => {
           </div>
         )}
       </div>
+
+      {/* Inline edit prompt — visible when an element is selected */}
+      {selectedElementId !== null && (
+        <div className="shrink-0 border-t border-[var(--glass-border-subtle)] p-2 flex flex-col gap-1.5">
+          <textarea
+            ref={textareaRef}
+            rows={2}
+            className="w-full bg-[var(--glass-bg-1)] border border-[var(--glass-border-subtle)] rounded-lg px-2.5 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] resize-none focus:outline-none focus:border-[var(--glass-border-strong)]"
+            placeholder="Describe edit... (Enter to apply)"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void submit(instruction).then((ok) => {
+                  if (ok) setInstruction("");
+                });
+              }
+            }}
+            disabled={isStreaming}
+          />
+
+          {editError !== null && (
+            <div className="glass-well glass-tint-red rounded px-2 py-1 text-[10px] text-red-300 font-mono break-words">
+              {editError}
+              <button
+                onClick={clearError}
+                className="ml-2 underline underline-offset-2 hover:text-red-200"
+              >
+                dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            {isStreaming ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-400" />
+                </span>
+                Generating...
+              </div>
+            ) : (
+              <span className="text-[10px] text-[var(--text-tertiary)]">
+                Shift+Enter for newline
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() =>
+                void submit(instruction).then((ok) => {
+                  if (ok) setInstruction("");
+                })
+              }
+              disabled={isStreaming || !instruction.trim()}
+              className="px-2.5 py-1 rounded text-xs glass-panel glass-hover text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

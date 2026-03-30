@@ -1,4 +1,17 @@
 {
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_input.file_path // empty' 2>/dev/null); if [ -z \"$FILE\" ]; then exit 0; fi; if echo \"$FILE\" | grep -qE '/(src|server|bin)/' && ! echo \"$FILE\" | grep -qE '(CHANGES\\.md|PLAN\\.md|CLAUDE\\.md|Plans/)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"You just edited a source file. If this change is not covered by a PLAN.md task, add an entry to CHANGES.md (newest first) describing what now exists, files affected, and any notable decisions.\"}}'; fi"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Read(**)",

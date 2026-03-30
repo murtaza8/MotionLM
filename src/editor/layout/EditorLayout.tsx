@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { History, PanelLeft, PanelRight, PanelBottom, Sparkles } from "lucide-react";
+import { Download, History, PanelLeft, PanelRight, PanelBottom, Settings, Sparkles } from "lucide-react";
 
 import { useStore } from "@/store";
+import { saveFileToDisk } from "@/persistence/filesystem";
 
 import { FileTreePanel } from "./FileTreePanel";
 import { PreviewPanel } from "./PreviewPanel";
@@ -10,6 +11,8 @@ import { TimelinePanel } from "./TimelinePanel";
 import { CommandPalette } from "@/editor/prompt/CommandPalette";
 import { VersionHistory } from "@/editor/history/VersionHistory";
 import { GenerateChat } from "@/editor/generate/GenerateChat";
+import { SettingsPanel } from "@/editor/settings/SettingsPanel";
+import { ExportModal } from "@/editor/export/ExportModal";
 
 // ---------------------------------------------------------------------------
 // EditorLayout
@@ -29,11 +32,16 @@ export const EditorLayout = () => {
   const toggleCommandPalette = useStore((s) => s.toggleCommandPalette);
   const closeCommandPalette = useStore((s) => s.closeCommandPalette);
 
+  const apiKey = useStore((s) => s.apiKey);
+  const openSettingsPanel = useStore((s) => s.openSettingsPanel);
+
   const versionHistoryOpen = useStore((s) => s.versionHistoryOpen);
   const toggleVersionHistory = useStore((s) => s.toggleVersionHistory);
 
   const generateChatOpen = useStore((s) => s.generateChatOpen);
   const toggleGenerateChat = useStore((s) => s.toggleGenerateChat);
+
+  const openExportModal = useStore((s) => s.openExportModal);
 
   const fileTreeVisible = useStore((s) => s.fileTreeVisible);
   const propertiesPanelVisible = useStore((s) => s.propertiesPanelVisible);
@@ -49,6 +57,14 @@ export const EditorLayout = () => {
       const inInput =
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement;
+
+      // Cmd+S / Ctrl+S — save active file to disk
+      if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const { activeFilePath } = useStore.getState();
+        if (activeFilePath) void saveFileToDisk(activeFilePath);
+        return;
+      }
 
       // Cmd+K / Ctrl+K — toggle command palette
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -150,6 +166,8 @@ export const EditorLayout = () => {
       <CommandPalette />
       <VersionHistory />
       <GenerateChat />
+      <SettingsPanel />
+      <ExportModal />
 
       {/* Outer shell — flex column filling the viewport */}
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--color-base)]">
@@ -175,6 +193,16 @@ export const EditorLayout = () => {
             >
               <Sparkles className="w-3.5 h-3.5" />
               Generate
+            </button>
+
+            <button
+              onClick={openExportModal}
+              aria-label="Export video"
+              title="Export video"
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs glass-hover text-[var(--text-secondary)]"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
             </button>
 
             <div className="w-px h-4 bg-[var(--glass-border-subtle)] mx-1" />
@@ -216,8 +244,35 @@ export const EditorLayout = () => {
             >
               <History className="w-4 h-4 text-[var(--text-secondary)]" />
             </button>
+
+            <div className="w-px h-4 bg-[var(--glass-border-subtle)] mx-1" />
+
+            <button
+              onClick={openSettingsPanel}
+              aria-label="Settings"
+              title="Settings"
+              className="relative p-1.5 rounded glass-hover"
+            >
+              <Settings className="w-4 h-4 text-[var(--text-secondary)]" />
+              {!apiKey && (
+                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
+              )}
+            </button>
           </div>
         </div>
+
+        {/* No-key banner — visible until API key is configured */}
+        {!apiKey && (
+          <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
+            <span>AI features require an Anthropic API key.</span>
+            <button
+              onClick={openSettingsPanel}
+              className="underline underline-offset-2 hover:text-amber-200 transition-colors"
+            >
+              Configure
+            </button>
+          </div>
+        )}
 
         {/* Content row — file tree | preview | properties */}
         <div className="relative flex flex-1 min-h-0 overflow-hidden">
