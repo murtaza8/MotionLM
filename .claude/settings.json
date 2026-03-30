@@ -27,13 +27,14 @@
       "Bash(git log*)",
       "Bash(git branch*)",
       "Bash(git stash list)",
+      "Bash(git commit*)",
+      "Bash(git add*)",
+      "Bash(git init)",
       "Bash(ls*)",
       "Bash(mkdir -p *)",
       "Bash(cat *)"
     ],
     "deny": [
-      "Bash(git push*)",
-      "Bash(git commit*)",
       "Bash(git reset --hard*)",
       "Bash(git clean*)",
       "Bash(git rebase*)",

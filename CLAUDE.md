@@ -245,3 +245,5 @@ npm run test          # Vitest (unit tests for engine/temporal and engine/compil
 
 - Post-Task Sync: Upon completion, update the status to [x] (Done) and append the primary file path(s) created or modified in parentheses.
 Example: - [x] Implement temporal parser logic (src/engine/temporal/parser.ts)
+
+3. After executing every task, briefly tell me about how to test if everything is correctly set up. 

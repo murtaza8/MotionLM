@@ -1,4 +1,5 @@
-import { FileCode2, FilePlus } from "lucide-react";
+import { FileCode2, FilePlus, Upload } from "lucide-react";
+import { useRef } from "react";
 
 import { useStore } from "@/store";
 
@@ -8,6 +9,7 @@ export const FileTreePanel = () => {
   const setActiveFile = useStore((s) => s.setActiveFile);
   const createFile = useStore((s) => s.createFile);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const fileEntries = Array.from(files.entries());
 
   const handleNewFile = () => {
@@ -18,6 +20,40 @@ export const FileTreePanel = () => {
     const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
     createFile(path, "");
     setActiveFile(path);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = "";
+    if (!file) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "tsx" && ext !== "ts") {
+      alert("Only .tsx and .ts files are supported.");
+      return;
+    }
+
+    let path = `/${file.name}`;
+    if (files.has(path)) {
+      const base = file.name.replace(/\.(tsx|ts)$/, "");
+      const suffix = ext;
+      let i = 1;
+      while (files.has(`/${base}-${i}.${suffix}`)) i++;
+      path = `/${base}-${i}.${suffix}`;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event: ProgressEvent<FileReader>) => {
+      const content = event.target?.result;
+      if (typeof content !== "string") return;
+      createFile(path, content);
+      setActiveFile(path);
+    };
+    reader.onerror = () => {
+      alert("Failed to read the file. Please try again.");
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -55,14 +91,28 @@ export const FileTreePanel = () => {
           );
         })}
       </div>
-      <div className="p-2 border-t border-[var(--glass-border-subtle)]">
+      <div className="p-2 border-t border-[var(--glass-border-subtle)] flex gap-1">
         <button
           onClick={handleNewFile}
-          className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
+          className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
         >
           <FilePlus className="w-4 h-4 shrink-0" />
           <span>New File</span>
         </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
+          title="Upload .tsx / .ts file"
+        >
+          <Upload className="w-4 h-4 shrink-0" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".tsx,.ts"
+          className="hidden"
+          onChange={handleFileUpload}
+        />
       </div>
     </div>
   );
