@@ -10,6 +10,34 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## 2026-03-31 — Agentic transformation: plan and branch
+
+MotionLM is transitioning from a tool-with-AI-features to a truly agentic AI collaborator. This is a major architectural shift.
+
+**What changed:**
+- Previous PLAN.md (phases 0-5, all completed) archived to `Plans/phase-0-5-plan.md`
+- New PLAN.md created with agentic transformation tasks (Phase A through Phase F)
+- Full architecture rationale in `Plans/agentic-transformation-plan.md`
+- Development moves to `agentic-v2` branch; `main` stays stable
+
+**Architectural direction:**
+- Single agent loop using Anthropic's native tool_use API replaces both CommandPalette (single-turn edits) and GenerateChat (multi-turn generation)
+- New `src/agent/` directory: runner, session, tools, context builder, cache manager, memory, proactive intelligence
+- New `agentSlice` in Zustand store for agent state, conversation history, token tracking
+- Prompt caching with `cache_control` breakpoints for 90% cost reduction on cached context
+- `think` tool for internal agent reasoning (viewable by user on click)
+- Feature-flagged AgentChat panel runs alongside existing UI during transition
+- Old CommandPalette and GenerateChat removed only in Phase E after validation
+- Visual grounding via Remotion's `renderStill()` (not html-to-image)
+- Web Worker for Babel compilation in Phase B
+- Memory layer (session persistence, style profile, edit journal) in Phase C
+- Proactive suggestions with timeline ghost tracks in Phase D
+- Director inputs (spatial draw-to-animate, voice-to-action) in Phase E
+
+Files affected: `PLAN.md`, `Plans/phase-0-5-plan.md` (new), `Plans/agentic-transformation-plan.md` (new)
+
+---
+
 ## 2026-03-31 — MP4 export UI
 
 `ExportModal` (`src/editor/export/ExportModal.tsx`) wires the existing render server to the UI. An "Export" button in the toolbar opens a Radix Dialog that:
