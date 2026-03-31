@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Download, History, PanelLeft, PanelRight, PanelBottom, Settings, Sparkles } from "lucide-react";
+import { useEffect, type RefObject } from "react";
+import { Download, History, MessageSquare, PanelLeft, PanelRight, PanelBottom, Settings, Sparkles } from "lucide-react";
 
 import { useStore } from "@/store";
 import { saveFileToDisk } from "@/persistence/filesystem";
@@ -13,6 +13,7 @@ import { VersionHistory } from "@/editor/history/VersionHistory";
 import { GenerateChat } from "@/editor/generate/GenerateChat";
 import { SettingsPanel } from "@/editor/settings/SettingsPanel";
 import { ExportModal } from "@/editor/export/ExportModal";
+import { AgentChat } from "@/editor/chat/AgentChat";
 
 // ---------------------------------------------------------------------------
 // EditorLayout
@@ -52,6 +53,9 @@ export const EditorLayout = () => {
 
   const selectedElementId = useStore((s) => s.selectedElementId);
 
+  const useAgentChat = useStore((s) => s.useAgentChat);
+  const toggleAgentChat = useStore((s) => s.toggleAgentChat);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const inInput =
@@ -66,10 +70,19 @@ export const EditorLayout = () => {
         return;
       }
 
-      // Cmd+K / Ctrl+K — toggle command palette
+      // Cmd+K / Ctrl+K — focus agent chat input (when enabled) or toggle command palette
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        toggleCommandPalette();
+        if (useAgentChat) {
+          // Focus the agent chat input
+          const ref = (window as unknown as Record<string, unknown>)
+            .__agentChatInputRef as
+            | RefObject<HTMLTextAreaElement | null>
+            | undefined;
+          ref?.current?.focus();
+        } else {
+          toggleCommandPalette();
+        }
         return;
       }
 
@@ -159,6 +172,7 @@ export const EditorLayout = () => {
     toggleFileTree,
     togglePropertiesPanel,
     toggleTimeline,
+    useAgentChat,
   ]);
 
   return (
@@ -184,6 +198,16 @@ export const EditorLayout = () => {
             >
               {editMode ? "Edit mode — E to exit" : "E to edit"}
             </span>
+
+            <button
+              onClick={toggleAgentChat}
+              aria-label="Toggle agent chat"
+              title="Toggle agent chat"
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs glass-hover ${useAgentChat ? "glass-tint-blue text-blue-300" : "text-[var(--text-secondary)]"}`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Agent
+            </button>
 
             <button
               onClick={toggleGenerateChat}
@@ -274,7 +298,7 @@ export const EditorLayout = () => {
           </div>
         )}
 
-        {/* Content row — file tree | preview | properties */}
+        {/* Content row — file tree | preview (+properties) | agent chat */}
         <div className="relative flex flex-1 min-h-0 overflow-hidden">
 
           {/* File tree — slides in/out via width transition */}
@@ -297,12 +321,23 @@ export const EditorLayout = () => {
             <PreviewPanel />
           </div>
 
-          {/* Properties — slides in/out via width transition */}
+          {/* Properties — slides in/out via width transition (hidden when agent chat is open) */}
+          {!useAgentChat && (
+            <div
+              className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${propertiesPanelVisible ? "w-[280px]" : "w-0"}`}
+            >
+              <div className="w-[280px] h-full">
+                <PropertiesPanel />
+              </div>
+            </div>
+          )}
+
+          {/* Agent chat — right panel, slides in/out via width transition */}
           <div
-            className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${propertiesPanelVisible ? "w-[280px]" : "w-0"}`}
+            className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${useAgentChat ? "w-[360px]" : "w-0"}`}
           >
-            <div className="w-[280px] h-full">
-              <PropertiesPanel />
+            <div className="w-[360px] h-full">
+              <AgentChat />
             </div>
           </div>
         </div>

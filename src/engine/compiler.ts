@@ -59,8 +59,8 @@ const REMOTION_APIS = {
   Composition: CompositionStub,
 } as const;
 
-const API_PARAM_NAMES = Object.keys(REMOTION_APIS);
-const API_PARAM_VALUES = Object.values(REMOTION_APIS);
+export const API_PARAM_NAMES = Object.keys(REMOTION_APIS);
+export const API_PARAM_VALUES: unknown[] = Object.values(REMOTION_APIS);
 
 // ---------------------------------------------------------------------------
 // compileComposition
@@ -212,7 +212,7 @@ export const compileWithVFS = (
 // compileSingleFile — compiles one file with VFS registry injected
 // ---------------------------------------------------------------------------
 
-const REGISTRY_PARAM = "__vfsRegistry__";
+export const REGISTRY_PARAM = "__vfsRegistry__";
 
 function compileSingleFile(
   source: string,
@@ -394,7 +394,7 @@ function topoSort(
  * This is intentionally simple — it only needs to capture component names for
  * the scope mirror pattern above, not perform full AST analysis.
  */
-const extractTopLevelNames = (code: string): string[] => {
+export const extractTopLevelNames = (code: string): string[] => {
   const names: string[] = [];
   // Match: const Foo = ..., function Foo, class Foo
   const pattern =
@@ -414,9 +414,9 @@ const extractTopLevelNames = (code: string): string[] => {
  */
 // Names used by Remotion's registerRoot pattern — these are wrappers, not
 // the actual composition component we want to render in the player.
-const ROOT_WRAPPER_NAMES = new Set(["RemotionRoot", "Root", "registerRoot"]);
+export const ROOT_WRAPPER_NAMES = new Set(["RemotionRoot", "Root", "registerRoot"]);
 
-const resolveRootComponent = (
+export const resolveRootComponent = (
   scope: Record<string, unknown>
 ): React.ComponentType | null => {
   const entries = Object.entries(scope);
@@ -460,7 +460,7 @@ const humanizeTransformError = (message: string): string => {
   return `Compilation error: ${message.split("\n")[0]}`;
 };
 
-const humanizeRuntimeError = (message: string): string => {
+export const humanizeRuntimeError = (message: string): string => {
   if (message.includes("is not defined")) {
     return `Undefined reference: ${message.split("\n")[0]}`;
   }

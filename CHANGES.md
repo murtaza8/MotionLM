@@ -10,6 +10,33 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## ContextPill shows source line number (2026-03-31)
+
+`ContextPill` in the agent chat input now displays `@div:148` (the element's source line number from `selectedElementId`) instead of `@div:0` (which was incorrectly appending the current playback frame). The `selectedElementId` already encodes `tagName:lineNumber`, so the pill now renders it directly.
+
+- Files: `src/editor/chat/ContextPill.tsx`
+- Removed unused `selectedFrame` read from store in this component
+
+---
+
+## Phase A bug fixes (2026-03-31)
+
+Post-review fixes for Phase A agent implementation. Four bugs corrected:
+
+1. **`AgentAction.tool_call_result` now includes `toolName`** — allows session.ts to distinguish think calls from real edits without a separate lookup. Added `assistant_turn` action that carries the complete assistant content blocks (text + tool_use) for persistent history storage.
+   - Files: `src/agent/types.ts`
+
+2. **Runner emits `assistant_turn` action** — after building each API turn's assistant content, runner now yields `{ type: "assistant_turn", content }` before executing tools. Session.ts catches this to append the full message (text + tool_use blocks) to conversation history. Previously only streamed text was stored, causing multi-turn context loss.
+   - Files: `src/agent/runner.ts`
+
+3. **Session.ts stores complete assistant messages** — handles `assistant_turn` action to append full content to store. Only calls `recordEdit()` for non-think tools (think calls are zero-cost, shouldn't advance the profile cache invalidation counter). Removed dead `toolResultSummaries` accumulator.
+   - Files: `src/agent/session.ts`
+
+4. **`create_file` tool validates compilation** — now calls `compileWithVFS()` before creating the file, consistent with `edit_file`. Returns compilation error if code is invalid instead of silently creating a broken file.
+   - Files: `src/agent/tools/create-file.ts`
+
+---
+
 ## 2026-03-31 — Agentic transformation: plan and branch
 
 MotionLM is transitioning from a tool-with-AI-features to a truly agentic AI collaborator. This is a major architectural shift.
@@ -66,6 +93,59 @@ When you make a change that is not part of a PLAN.md task, append an entry here:
 ---
 
 <!-- Add new entries below this line, newest first -->
+
+## 2026-03-31 — runner.ts: tighten toolResultContent type
+
+`toolResultContent` was typed as `AgentRequestMessage["content"]` (the wide `AgentContentBlock[]` from client.ts) even though it only ever holds `tool_result` blocks. Changed to `ToolResultContentBlock[]` (from types.ts), which removes the `as unknown as` double cast at the `tool_result_turn` yield site. The `currentMessages.push` at the API boundary compiles without a cast because `ToolResultContentBlock` is structurally compatible with `AgentContentBlock`'s `tool_result` variant.
+
+Files: `src/agent/runner.ts`
+
+## 2026-03-31 — Fix capture_frame: renders wrong composition when VFS has multiple files
+
+`capture_frame` and `capture_sequence` were sending all VFS files but no entry path. The server fell back to `/main.tsx` or the first file alphabetically, which meant any composition not named `main.tsx` (e.g. `billiard-shot.tsx`) would silently render the wrong composition.
+
+Fix: pass `entryPath: store.activeFilePath` in both tools. Server `RenderStillSchema` and `RenderStillParams` now accept an optional `entryPath`. `handleRenderStill` uses it as `mainVfsKey` when provided, falling back to the old heuristic only when absent.
+
+Files: `src/agent/tools/capture-frame.ts`, `src/agent/tools/capture-sequence.ts`, `server/render-server.ts`, `server/render-handler.ts`
+
+## 2026-03-31 — Fix capture_frame: hardcoded ./main import path
+
+`handleRenderStill` in `server/render-handler.ts` hardcoded `import from './main'` in the wrapper entry file regardless of the actual VFS file path. Files named anything other than `main.tsx` (e.g. `billiard-shot.tsx`) caused a webpack bundle error: `Can't resolve './main'`.
+
+Fix: track the actual VFS key that provides the entry code, derive `mainRelative` (disk path) and `mainImportPath` (import-safe path without extension) from it. The `registerRoot` branch and the wrapper import both now use the correct path.
+
+Files: `server/render-handler.ts`
+
+## 2026-03-31 — Phase B Session 2: Tools integration + agent runner image support
+
+### Image content block end-to-end flow (B.2.1)
+- `src/agent/types.ts`: Added `tool_result_turn` action to `AgentAction`. Emitted after each batch of tool executions so conversation history stays complete. Contains `ToolResultContentBlock[]` (text or image).
+- `src/agent/runner.ts`: Emits `tool_result_turn` with full tool result content before the loop-back `currentMessages.push`. This means session.ts can store the result message in the store, enabling `findToolResult` in MessageList to correctly pair tool_use blocks with their results.
+- `src/agent/session.ts`: Handles `tool_result_turn` by calling `appendMessage({ role: "user", content })`. Previously tool result messages were only in the runner's local `currentMessages` array; they never reached `conversationHistory`. This caused ToolCallCards to always appear pending and images to never display.
+- `src/editor/chat/ToolCallCard.tsx`: Added `Camera` / `Film` icons for `capture_frame` / `capture_sequence`. Added `extractOutputImage` helper that finds image blocks in tool_result content. Renders captured PNG inline in the expanded card. Added `summarizeInput` entries for both new tools.
+
+### System prompt visual grounding (B.2.3)
+- `src/ai/system-prompt.ts`: Added `<visual-grounding>` section to `buildAgentSystemPrompt` instructing the agent to call `capture_frame` after visual edits, when asked about appearance, and `capture_sequence` for timing reviews. Under 150 tokens. Added `capture_frame` and `capture_sequence` to the `<capabilities>` tool list.
+
+### Compiler bridge timeout (B.2.4)
+- `src/engine/compiler-bridge.ts`: Added `WORKER_TIMEOUT_MS = 10_000`. The pending-map entries now clear their own timeout on resolve/reject. If the worker hangs, the promise rejects after 10s and `compileAsync` falls back to synchronous `compileWithVFS`. This prevents the agent loop from blocking indefinitely on a stalled worker.
+
+## 2026-03-31 — Phase B: Visual Grounding + Web Worker
+
+### POST /api/render/still
+- `server/render-handler.ts`: `handleRenderStill()` — bundles VFS to temp dir, calls `renderStill()` from `@remotion/renderer`, reads PNG output as base64, cleans up temp dir on completion or error. Defaults to 854×480.
+- `server/render-server.ts`: `POST /api/render/still` route with zod validation (`RenderStillSchema`). Returns `{ ok: true, data: base64string }` or `{ ok: false, error }`.
+
+### capture_frame and capture_sequence tools
+- `src/agent/tools/capture-frame.ts`: Agent tool that calls `/api/render/still` with the current VFS and playhead frame. Returns `ToolResult { type: "image" }` on success, text error on failure or if render server is unreachable.
+- `src/agent/tools/capture-sequence.ts`: Agent tool accepting `{ frames: number[] }` (max 4). Renders all frames in parallel, stitches into a 2×2 filmstrip via `OffscreenCanvas`. Falls back to first frame if OffscreenCanvas is unavailable.
+- `src/agent/tools/index.ts`: Both tools exported and registered in `ALL_TOOLS`.
+
+### Web Worker compilation
+- `src/engine/compiler.worker.ts`: Dedicated worker that runs the Babel transform step (dep graph, topo sort, `Babel.transform()`) for all VFS files. Returns `{ transformedSources, compilationOrder }` — NOT React components (functions can't cross postMessage). Does not import from compiler.ts to avoid the `useStore` hoisted import; re-implements the ~80-line pure dep graph + transform logic using the babel plugins directly.
+- `src/engine/compiler-bridge.ts`: Main-thread wrapper. `compileAsync(entryPath, files)` posts to the worker, receives transformed sources, then runs `new Function()` on the main thread to extract the React component. Pending-map pattern for request/response. Falls back to synchronous `compileWithVFS()` if the worker is unavailable (SSR, crash, older browser).
+- `src/engine/compiler.ts`: Added exports for `extractTopLevelNames`, `resolveRootComponent`, `ROOT_WRAPPER_NAMES`, `API_PARAM_NAMES`, `API_PARAM_VALUES`, `REGISTRY_PARAM`, `humanizeRuntimeError` — used by the bridge for the `new Function()` execution step.
+- `src/editor/layout/PreviewPanel.tsx`: Replaced synchronous `compileWithVFS()` call with `compileAsync()` from the bridge. Added stale-check to discard in-flight results when active file changes mid-compile.
 
 ## [2026-03-31] Settings panel + inline edit prompt in PropertiesPanel
 

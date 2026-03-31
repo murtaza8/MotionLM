@@ -1,4 +1,5 @@
 # MotionLM — Execution Plan
+This is an archived document. The plan here is already implemented.
 
 MotionLM is a browser-based AI-first visual editor for Remotion compositions. Users click any element at any frame, describe an edit in natural language, and see it applied live. The core technical contribution is temporal awareness: extracting animation timing, Sequence boundaries, and frame-relative state from Remotion source code via AST analysis, then assembling that context for Claude to make precise edits.
 

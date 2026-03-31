@@ -21,7 +21,7 @@ Previous plan (phases 0-5, completed): `Plans/phase-0-5-plan.md`
 The foundation everything else builds on. Single agent loop with tool_use API, prompt caching, and a persistent chat panel (feature-flagged alongside existing UI).
 
 ### Task A.1: Agent type definitions
-`[ ]`
+`[x]` (src/agent/types.ts)
 
 **Target files**: `src/agent/types.ts`
 
@@ -34,7 +34,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.2: Tool system types and core tools
-`[ ]`
+`[x]` (src/agent/tools/types.ts, think.ts, edit-file.ts, read-file.ts, list-files.ts, create-file.ts, check-compilation.ts, seek-to-frame.ts, get-temporal-map.ts, get-element-info.ts, index.ts)
 
 **Target files**: `src/agent/tools/types.ts`, `src/agent/tools/think.ts`, `src/agent/tools/edit-file.ts`, `src/agent/tools/read-file.ts`, `src/agent/tools/list-files.ts`, `src/agent/tools/create-file.ts`, `src/agent/tools/check-compilation.ts`, `src/agent/tools/seek-to-frame.ts`, `src/agent/tools/get-temporal-map.ts`, `src/agent/tools/get-element-info.ts`, `src/agent/tools/index.ts`
 
@@ -49,7 +49,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes. Tools can be imported and their schemas validated.
 
 ### Task A.3: Agent runner (tool-calling loop)
-`[ ]`
+`[x]` (src/agent/runner.ts)
 
 **Target files**: `src/agent/runner.ts`
 
@@ -64,7 +64,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.4: Agent store slice
-`[ ]`
+`[x]` (src/store.ts — agentSlice added)
 
 **Target files**: `src/store.ts`
 
@@ -76,7 +76,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes. Store can be imported and actions called.
 
 ### Task A.5: Extend API client for tool_use + streaming
-`[ ]`
+`[x]` (src/ai/client.ts — sendAgentRequest, AgentStreamEvent, AgentRequestMessage, ToolDefinition, SystemBlock; src/agent/runner.ts — refactored to use sendAgentRequest)
 
 **Target files**: `src/ai/client.ts`
 
@@ -88,7 +88,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.6: Prompt caching manager
-`[ ]`
+`[x]` (src/agent/cache-manager.ts)
 
 **Target files**: `src/agent/cache-manager.ts`
 
@@ -101,7 +101,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.7: System prompt rewrite
-`[ ]`
+`[x]` (src/ai/system-prompt.ts — buildAgentSystemPrompt added; legacy exports preserved)
 
 **Target files**: `src/ai/system-prompt.ts`
 
@@ -112,7 +112,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.8: Unified context builder
-`[ ]`
+`[x]` (src/agent/context.ts — buildAgentUserMessage, buildFollowUpUserMessage)
 
 **Target files**: `src/agent/context.ts`
 
@@ -124,7 +124,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.9: Agent session manager
-`[ ]`
+`[x]` (src/agent/session.ts — AgentSession class)
 
 **Target files**: `src/agent/session.ts`
 
@@ -136,7 +136,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: `npm run typecheck` passes
 
 ### Task A.10: AgentChat UI panel
-`[ ]`
+`[x]` (src/editor/chat/AgentChat.tsx, MessageList.tsx, ToolCallCard.tsx, ContextPill.tsx, ThinkingIndicator.tsx)
 
 **Target files**: `src/editor/chat/AgentChat.tsx`, `src/editor/chat/MessageList.tsx`, `src/editor/chat/ToolCallCard.tsx`, `src/editor/chat/ContextPill.tsx`, `src/editor/chat/ThinkingIndicator.tsx`
 
@@ -150,7 +150,7 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 **Verification**: Component renders without errors. Feature flag toggles visibility.
 
 ### Task A.11: Wire AgentChat into EditorLayout
-`[ ]`
+`[x]` (src/editor/layout/EditorLayout.tsx — AgentChat panel, Cmd+K routing, Agent toolbar button)
 
 **Target files**: `src/editor/layout/EditorLayout.tsx`
 
@@ -177,14 +177,66 @@ The foundation everything else builds on. Single agent loop with tool_use API, p
 ## Phase B: Visual Grounding + Web Worker (2 weeks)
 Depends on Phase A.
 
-`[ ]` Tasks to be detailed when Phase A is complete.
+### Task B.1: POST /api/render/still endpoint
+`[x]` (server/render-handler.ts, server/render-server.ts)
+**Target files**: `server/render-server.ts`, `server/render-handler.ts`
+- Accepts `{ files, compositionId, frame, width?, height? }`, validates with zod
+- Uses `renderStill()` from `@remotion/renderer`
+- Returns PNG as base64 string
+- Default resolution: 854x480
+- Handles errors gracefully, never exposes raw stack traces
 
-Key deliverables:
-- `POST /api/render/still` endpoint using Remotion's `renderStill()`
-- `capture_frame` and `capture_sequence` tools
-- Image content block support in agent runner
-- Web Worker for Babel compilation (`compiler.worker.ts`, `compiler-bridge.ts`)
-- Migrate PreviewPanel and store to async compilation
+### Task B.2: capture_frame tool
+`[x]` (src/agent/tools/capture-frame.ts, src/agent/tools/index.ts)
+**Target files**: `src/agent/tools/capture-frame.ts`, `src/agent/tools/index.ts`
+- Calls `POST /api/render/still` with current VFS files and frame
+- Gets compositionId from store or defaults to "Main"
+- Returns `ToolResult { type: "image", media_type: "image/png", data: base64 }`
+- Falls back to text error if render server unreachable
+- Registered in ALL_TOOLS
+
+### Task B.3: capture_sequence tool
+`[x]` (src/agent/tools/capture-sequence.ts, src/agent/tools/index.ts)
+**Target files**: `src/agent/tools/capture-sequence.ts`, `src/agent/tools/index.ts`
+- Accepts `{ frames: number[], label?: string }`
+- Renders up to 4 frames, stitches into 2x2 filmstrip via OffscreenCanvas
+- Returns single image ToolResult
+- Registered in ALL_TOOLS
+
+### Task B.4: compiler.worker.ts
+`[x]` (src/engine/compiler.worker.ts)
+**Target files**: `src/engine/compiler.worker.ts`
+- Receives `{ type: "compile", requestId, entryPath, files }`
+- Runs Babel transform for all files (dep graph, topo sort, transform)
+- Posts back `{ transformedSources, compilationOrder }` or `{ error }`
+- Babel transform is the slow step (~50ms); worker moves it off main thread
+
+### Task B.5: compiler-bridge.ts
+`[x]` (src/engine/compiler-bridge.ts)
+**Target files**: `src/engine/compiler-bridge.ts`
+- Exports `compileAsync(entryPath, files): Promise<CompileResult>`
+- Manages single persistent Worker instance
+- Pending-map pattern for request/response round-trip
+- Runs `new Function()` on main thread from worker's transformed sources
+- Falls back to synchronous `compileWithVFS()` if Worker unavailable
+
+### Task B.6: Migrate PreviewPanel to async compilation
+`[x]` (src/editor/layout/PreviewPanel.tsx)
+**Target files**: `src/editor/layout/PreviewPanel.tsx`
+- Replace synchronous `compileWithVFS()` call with `compileAsync()` from bridge
+- Compilation status flow unchanged: draftCode → compiling → success/error → promote/discard
+
+### Task B.2.1: Image content block end-to-end flow
+`[x]` (src/agent/types.ts, src/agent/runner.ts, src/agent/session.ts, src/editor/chat/ToolCallCard.tsx)
+
+### Task B.2.2: Verify capture tools in ALL_TOOLS
+`[x]` (src/agent/tools/index.ts — confirmed from Session 1)
+
+### Task B.2.3: Visual grounding instructions in system prompt
+`[x]` (src/ai/system-prompt.ts)
+
+### Task B.2.4: Compiler bridge timeout
+`[x]` (src/engine/compiler-bridge.ts)
 
 See `Plans/agentic-transformation-plan.md` sections 4 and 8.
 

@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 import { parseTemporalMap } from "@/engine/temporal/parser";
 import type { TemporalMap } from "@/engine/temporal/types";
+import { AgentState } from "@/agent/types";
+import type { AgentMessage, TokenUsage } from "@/agent/types";
 
 // ---------------------------------------------------------------------------
 // VFS types
@@ -428,6 +430,81 @@ const createHistorySlice = (
 });
 
 // ---------------------------------------------------------------------------
+// agentSlice
+// ---------------------------------------------------------------------------
+
+interface AgentSlice {
+  agentState: AgentState;
+  conversationHistory: AgentMessage[];
+  activeSessionId: string | null;
+  pendingToolCalls: string[];
+  tokenUsage: TokenUsage;
+  iterationCount: number;
+  thinkLog: string[];
+  useAgentChat: boolean;
+  setAgentState: (state: AgentState) => void;
+  appendMessage: (message: AgentMessage) => void;
+  setTokenUsage: (usage: TokenUsage) => void;
+  incrementIteration: () => void;
+  resetSession: () => void;
+  appendThinkLog: (thought: string) => void;
+  toggleAgentChat: () => void;
+  setActiveSessionId: (id: string | null) => void;
+  addPendingToolCall: (toolUseId: string) => void;
+  removePendingToolCall: (toolUseId: string) => void;
+}
+
+const createAgentSlice = (
+  set: (fn: (state: StoreState) => Partial<StoreState>) => void
+): AgentSlice => ({
+  agentState: AgentState.IDLE,
+  conversationHistory: [],
+  activeSessionId: null,
+  pendingToolCalls: [],
+  tokenUsage: { input: 0, output: 0, cached: 0 },
+  iterationCount: 0,
+  thinkLog: [],
+  useAgentChat: false,
+
+  setAgentState: (state) => set(() => ({ agentState: state })),
+
+  appendMessage: (message) =>
+    set((s) => ({ conversationHistory: [...s.conversationHistory, message] })),
+
+  setTokenUsage: (usage) => set(() => ({ tokenUsage: usage })),
+
+  incrementIteration: () =>
+    set((s) => ({ iterationCount: s.iterationCount + 1 })),
+
+  resetSession: () =>
+    set(() => ({
+      agentState: AgentState.IDLE,
+      conversationHistory: [],
+      activeSessionId: `session-${Date.now()}`,
+      pendingToolCalls: [],
+      tokenUsage: { input: 0, output: 0, cached: 0 },
+      iterationCount: 0,
+      thinkLog: [],
+    })),
+
+  appendThinkLog: (thought) =>
+    set((s) => ({ thinkLog: [...s.thinkLog, thought] })),
+
+  toggleAgentChat: () =>
+    set((s) => ({ useAgentChat: !s.useAgentChat })),
+
+  setActiveSessionId: (id) => set(() => ({ activeSessionId: id })),
+
+  addPendingToolCall: (toolUseId) =>
+    set((s) => ({ pendingToolCalls: [...s.pendingToolCalls, toolUseId] })),
+
+  removePendingToolCall: (toolUseId) =>
+    set((s) => ({
+      pendingToolCalls: s.pendingToolCalls.filter((id) => id !== toolUseId),
+    })),
+});
+
+// ---------------------------------------------------------------------------
 // Combined store type
 // ---------------------------------------------------------------------------
 
@@ -437,7 +514,8 @@ type StoreState = VFSSlice &
   SettingsSlice &
   SelectionSlice &
   HistorySlice &
-  UISlice;
+  UISlice &
+  AgentSlice;
 
 // ---------------------------------------------------------------------------
 // Persisted settings keys
@@ -462,6 +540,7 @@ export const useStore = create<StoreState>()(
       ...createSelectionSlice(set as Parameters<typeof createSelectionSlice>[0]),
       ...createHistorySlice(set as Parameters<typeof createHistorySlice>[0]),
       ...createUISlice(set as Parameters<typeof createUISlice>[0]),
+      ...createAgentSlice(set as Parameters<typeof createAgentSlice>[0]),
     }),
     {
       name: "motionlm-settings",

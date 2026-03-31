@@ -4,7 +4,7 @@ import os from "os";
 import { EventEmitter } from "events";
 
 import { bundle } from "@remotion/bundler";
-import { getCompositions, renderMedia } from "@remotion/renderer";
+import { getCompositions, renderMedia, renderStill } from "@remotion/renderer";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,6 +105,143 @@ export async function handleRender(
 
   scheduleCleanup(renderId);
   return { ok: true, renderId };
+}
+
+// ---------------------------------------------------------------------------
+// handleRenderStill
+// ---------------------------------------------------------------------------
+
+export interface RenderStillParams {
+  files: Record<string, string>;
+  entryPath?: string;
+  compositionId: string;
+  frame: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Synchronously renders a single PNG frame from a VFS snapshot.
+ * Bundles, finds the composition, calls renderStill(), and returns base64.
+ * Cleans up temp files on completion or error.
+ */
+export async function handleRenderStill(
+  params: RenderStillParams
+): Promise<{ ok: true; data: string } | { ok: false; error: string }> {
+  const { files, entryPath: providedEntryPath, compositionId, frame, width, height } = params;
+  let tmpDir: string | null = null;
+
+  try {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "motionlm-still-"));
+
+    // --- Write VFS files to disk ---
+    for (const [vfsPath, code] of Object.entries(files)) {
+      const relative = vfsPath.replace(/^\/+/, "");
+      const fullPath = path.join(tmpDir, relative);
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, code, "utf-8");
+    }
+
+    // --- Determine entry point ---
+    // Use the explicitly provided entryPath when available (passed by capture_frame
+    // / capture_sequence from store.activeFilePath). Fall back to /main.tsx →
+    // main.tsx → first file so the handler still works without it.
+    const mainVfsKey =
+      (providedEntryPath && providedEntryPath in files) ? providedEntryPath :
+      "/main.tsx" in files ? "/main.tsx" :
+      "main.tsx" in files ? "main.tsx" :
+      Object.keys(files)[0] ?? "/main.tsx";
+
+    const mainCode = files[mainVfsKey] ?? "";
+    // Relative disk path, e.g. "billiard-shot.tsx" (strip leading slash)
+    const mainRelative = mainVfsKey.replace(/^\/+/, "");
+    // Import-safe path without extension, e.g. "./billiard-shot"
+    const mainImportPath = "./" + mainRelative.replace(/\.(tsx?|jsx?)$/, "");
+
+    let entryPoint: string;
+
+    if (mainCode.includes("registerRoot")) {
+      entryPoint = path.join(tmpDir, mainRelative);
+    } else {
+      const componentName = extractComponentName(mainCode) ?? "Main";
+      const wrapper = [
+        `import { registerRoot, Composition } from 'remotion';`,
+        `import { ${componentName} } from '${mainImportPath}';`,
+        ``,
+        `const RemotionRoot = () => (`,
+        `  <Composition`,
+        `    id="${compositionId}"`,
+        `    component={${componentName}}`,
+        `    durationInFrames={300}`,
+        `    fps={30}`,
+        `    width={${width}}`,
+        `    height={${height}}`,
+        `    defaultProps={{}}`,
+        `  />`,
+        `);`,
+        ``,
+        `registerRoot(RemotionRoot);`,
+      ].join("\n");
+      entryPoint = path.join(tmpDir, "entry.tsx");
+      await fs.writeFile(entryPoint, wrapper, "utf-8");
+    }
+
+    // --- Bundle ---
+    const serveUrl = await bundle({
+      entryPoint,
+      webpackOverride: (config) => {
+        const existing = config.resolve?.modules ?? ["node_modules"];
+        return {
+          ...config,
+          resolve: {
+            ...config.resolve,
+            modules: [
+              ...existing,
+              path.join(process.cwd(), "node_modules"),
+            ],
+          },
+        };
+      },
+    });
+
+    // --- Find composition ---
+    const compositions = await getCompositions(serveUrl);
+    const composition = compositions.find((c) => c.id === compositionId);
+
+    if (!composition) {
+      const available = compositions.map((c) => c.id).join(", ");
+      throw new Error(
+        `Composition "${compositionId}" not found. Available: ${available || "none"}`
+      );
+    }
+
+    // Override resolution for the still render
+    const compositionForStill = { ...composition, width, height };
+
+    // --- Render still ---
+    const outputPath = path.join(tmpDir, "still.png");
+    await renderStill({
+      composition: compositionForStill,
+      serveUrl,
+      output: outputPath,
+      frame,
+      imageFormat: "png",
+    });
+
+    // --- Read and base64-encode ---
+    const buffer = await fs.readFile(outputPath);
+    const data = buffer.toString("base64");
+
+    return { ok: true, data };
+  } catch (err) {
+    const error =
+      err instanceof Error ? err.message : "Unknown error during still render";
+    return { ok: false, error };
+  } finally {
+    if (tmpDir) {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
 }
 
 async function runRender(job: RenderJob, params: RenderParams): Promise<void> {
