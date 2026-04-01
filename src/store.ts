@@ -218,21 +218,21 @@ const createPlayerSlice = (
 
 interface SettingsSlice {
   apiKey: string | null;
-  modelPreference: "sonnet" | "opus";
+  modelId: string;
   theme: "dark";
   setApiKey: (key: string | null) => void;
-  setModelPreference: (model: "sonnet" | "opus") => void;
+  setModelId: (id: string) => void;
 }
 
 const createSettingsSlice = (
   set: (fn: (state: StoreState) => Partial<StoreState>) => void
 ): SettingsSlice => ({
   apiKey: null,
-  modelPreference: "sonnet",
+  modelId: "claude-sonnet-4-6",
   theme: "dark",
 
   setApiKey: (key) => set(() => ({ apiKey: key })),
-  setModelPreference: (model) => set(() => ({ modelPreference: model })),
+  setModelId: (id) => set(() => ({ modelId: id })),
 });
 
 // ---------------------------------------------------------------------------
@@ -442,7 +442,6 @@ interface AgentSlice {
   tokenUsage: TokenUsage;
   iterationCount: number;
   thinkLog: string[];
-  useAgentChat: boolean;
   proactiveSuggestions: EditSuggestion[];
   setAgentState: (state: AgentState) => void;
   appendMessage: (message: AgentMessage) => void;
@@ -451,7 +450,6 @@ interface AgentSlice {
   incrementIteration: () => void;
   resetSession: () => void;
   appendThinkLog: (thought: string) => void;
-  toggleAgentChat: () => void;
   setActiveSessionId: (id: string | null) => void;
   addPendingToolCall: (toolUseId: string) => void;
   removePendingToolCall: (toolUseId: string) => void;
@@ -469,7 +467,6 @@ const createAgentSlice = (
   tokenUsage: { input: 0, output: 0, cached: 0 },
   iterationCount: 0,
   thinkLog: [],
-  useAgentChat: false,
   proactiveSuggestions: [],
 
   setAgentState: (state) => set(() => ({ agentState: state })),
@@ -499,9 +496,6 @@ const createAgentSlice = (
 
   appendThinkLog: (thought) =>
     set((s) => ({ thinkLog: [...s.thinkLog, thought] })),
-
-  toggleAgentChat: () =>
-    set((s) => ({ useAgentChat: !s.useAgentChat })),
 
   setActiveSessionId: (id) => set(() => ({ activeSessionId: id })),
 
@@ -541,7 +535,7 @@ type StoreState = VFSSlice &
 
 interface PersistedSettings {
   apiKey: string | null;
-  modelPreference: "sonnet" | "opus";
+  modelId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -566,7 +560,7 @@ export const useStore = create<StoreState>()(
       // Only persist settings fields — VFS and player state is ephemeral
       partialize: (state): PersistedSettings => ({
         apiKey: state.apiKey,
-        modelPreference: state.modelPreference,
+        modelId: state.modelId,
       }),
     }
   )

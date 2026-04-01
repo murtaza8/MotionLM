@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SupportedImageMediaType } from "@/agent/types";
 
 // ---------------------------------------------------------------------------
 // Legacy types (kept for existing UI — CommandPalette, GenerateChat)
@@ -48,7 +49,7 @@ export type AgentContentBlock =
         | { type: "text"; text: string }
         | {
             type: "image";
-            source: { type: "base64"; media_type: "image/png"; data: string };
+            source: { type: "base64"; media_type: SupportedImageMediaType; data: string };
           }
       >;
       is_error?: boolean;

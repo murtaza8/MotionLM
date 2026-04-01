@@ -1,8 +1,31 @@
-import { FileCode2, FilePlus, Save, Upload } from "lucide-react";
-import { useRef } from "react";
+import { useState, useRef } from "react";
+import { BookOpen, FileCode2, FilePlus, Save, Upload } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
 
 import { useStore } from "@/store";
 import { openFileFromDisk, saveFileToDisk } from "@/persistence/filesystem";
+
+import simpleTextSrc from "@/samples/simple-text.tsx?raw";
+import multiSequenceSrc from "@/samples/multi-sequence.tsx?raw";
+import springAnimationSrc from "@/samples/spring-animation.tsx?raw";
+import nestedComponentsSrc from "@/samples/nested-components.tsx?raw";
+import complexTimelineSrc from "@/samples/complex-timeline.tsx?raw";
+
+// ---------------------------------------------------------------------------
+// Templates
+// ---------------------------------------------------------------------------
+
+const TEMPLATES: ReadonlyArray<{ id: string; label: string; filename: string; source: string }> = [
+  { id: "simple-text", label: "Simple Text Animation", filename: "simple-text.tsx", source: simpleTextSrc },
+  { id: "multi-sequence", label: "Multi-Sequence Layout", filename: "multi-sequence.tsx", source: multiSequenceSrc },
+  { id: "spring-animation", label: "Spring Animation", filename: "spring-animation.tsx", source: springAnimationSrc },
+  { id: "nested-components", label: "Nested Components", filename: "nested-components.tsx", source: nestedComponentsSrc },
+  { id: "complex-timeline", label: "Complex Timeline", filename: "complex-timeline.tsx", source: complexTimelineSrc },
+];
+
+// ---------------------------------------------------------------------------
+// FileTreePanel
+// ---------------------------------------------------------------------------
 
 export const FileTreePanel = () => {
   const files = useStore((s) => s.files);
@@ -11,6 +34,7 @@ export const FileTreePanel = () => {
   const createFile = useStore((s) => s.createFile);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const fileEntries = Array.from(files.entries());
 
   const handleNewFile = () => {
@@ -70,6 +94,17 @@ export const FileTreePanel = () => {
     await saveFileToDisk(activeFilePath);
   };
 
+  const handleLoadTemplate = (template: typeof TEMPLATES[number]) => {
+    const path = `/${template.filename}`;
+    if (files.has(path)) {
+      const confirmed = window.confirm(`"${template.filename}" already exists. Overwrite?`);
+      if (!confirmed) return;
+    }
+    createFile(path, template.source);
+    setActiveFile(path);
+    setTemplatesOpen(false);
+  };
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 overflow-y-auto">
@@ -105,28 +140,67 @@ export const FileTreePanel = () => {
           );
         })}
       </div>
-      <div className="p-2 border-t border-[var(--glass-border-subtle)] flex gap-1">
+      <div className="p-2 border-t border-[var(--glass-border-subtle)] flex flex-wrap gap-1">
+        {/* Templates popover */}
+        <Popover.Root open={templatesOpen} onOpenChange={setTemplatesOpen}>
+          <Popover.Trigger asChild>
+            <button
+              className="flex items-center gap-1 px-2 py-1.5 rounded text-xs glass-hover text-[var(--text-secondary)]"
+              title="Load a template"
+            >
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+              <span>Templates</span>
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={6}
+              className="z-50 w-64 rounded-lg glass-panel border border-[var(--glass-border-subtle)] shadow-xl p-2"
+            >
+              <p className="text-[10px] font-medium uppercase tracking-widest text-[var(--text-tertiary)] px-1 pb-1.5">Templates</p>
+              <div className="flex flex-col gap-0.5">
+                {TEMPLATES.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded glass-hover">
+                    <span className="text-xs text-[var(--text-primary)] truncate">{t.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadTemplate(t)}
+                      className="shrink-0 text-[10px] text-blue-300 hover:text-blue-200 font-medium"
+                    >
+                      Load
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <Popover.Arrow className="fill-[var(--glass-border-subtle)]" />
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+
         <button
           onClick={handleNewFile}
-          className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs glass-hover text-[var(--text-secondary)]"
+          title="New file"
         >
-          <FilePlus className="w-4 h-4 shrink-0" />
-          <span>New File</span>
+          <FilePlus className="w-3.5 h-3.5 shrink-0" />
+          <span>New</span>
         </button>
         <button
           onClick={handleOpen}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)]"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-xs glass-hover text-[var(--text-secondary)]"
           title="Open .tsx / .ts file from disk"
         >
-          <Upload className="w-4 h-4 shrink-0" />
+          <Upload className="w-3.5 h-3.5 shrink-0" />
         </button>
         <button
           onClick={handleSave}
           disabled={!activeFilePath}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm glass-hover text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-xs glass-hover text-[var(--text-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
           title="Save active file (Cmd+S)"
         >
-          <Save className="w-4 h-4 shrink-0" />
+          <Save className="w-3.5 h-3.5 shrink-0" />
         </button>
         <input
           ref={fileInputRef}

@@ -283,21 +283,19 @@ See `Plans/agentic-transformation-plan.md` sections 7 and 17.
 ## Phase E: UI Migration + Onboarding + Director Inputs + External Integration (2-3 weeks)
 Depends on Phases A + B.
 
-`[ ]` Tasks to be detailed when Phase D is complete.
-
-Key deliverables:
-- Remove feature flag, AgentChat becomes default
-- Remove old CommandPalette and GenerateChat
-- Final EditorLayout: [FileTree] [Preview+Timeline] [AgentChat]
-- Empty state with starter prompts in AgentChat (clickable examples when no history)
-- Composition templates panel in FileTree (loads from src/samples/)
-- Reference image upload in chat — image attached as Claude vision content block
-- Voice-to-action: spacebar-hold-to-talk, transcript lands in input for review before send (no auto-send)
-- Asset sourcing: fetch_external_asset tool + POST /api/fetch-asset server route
-- Flexible model registry (src/agent/models.ts), model selector in Settings
-- **Ghost track rendering in TimelinePanel** — deferred from Phase D, safe after layout cleanup
+- `[x]` E.1 Remove feature flag: AgentChat is default. `useAgentChat`/`toggleAgentChat` removed. (src/store.ts, src/editor/layout/EditorLayout.tsx)
+- `[x]` E.2 Delete CommandPalette, ContextDisplay, GenerateChat. EditorLayout cleaned of all references. (src/editor/prompt/CommandPalette.tsx deleted, src/editor/prompt/ContextDisplay.tsx deleted, src/editor/generate/GenerateChat.tsx deleted, src/editor/layout/EditorLayout.tsx)
+- `[x]` E.3 Layout finalized: FileTree 220px | Preview+Timeline flex-1 | AgentChat 360px fixed. PropertiesPanel removed. (src/editor/layout/EditorLayout.tsx)
+- `[x]` E.4 Starter prompts in AgentChat: 4 chips shown when history empty + API key set. Sends immediately on click. (src/editor/chat/AgentChat.tsx)
+- `[x]` E.5 Templates popover in FileTreePanel: loads src/samples/ via ?raw imports. Confirms before overwrite. (src/editor/layout/FileTreePanel.tsx, src/vite-env.d.ts)
+- `[x]` E.6 Image attachment in AgentChat: paperclip icon, FileReader → base64, thumbnail preview, image content block in session message. (src/editor/chat/AgentChat.tsx, src/agent/session.ts)
+- `[x]` E.7 Voice input: VoiceInput.tsx (spacebar-hold-to-talk) + VoiceIndicator.tsx. Transcript prefixed [Frame N], no auto-send. (src/editor/chat/VoiceInput.tsx, src/editor/chat/VoiceIndicator.tsx)
+- `[x]` E.8 Ghost track rendering in TimelinePanel: amber dashed blocks with ✓/× buttons. Shared active-session.ts module. (src/editor/layout/TimelinePanel.tsx, src/agent/active-session.ts)
+- `[x]` E.9 Model registry: src/agent/models.ts, modelId in settingsSlice, select in SettingsPanel, model from store in session.ts. (src/agent/models.ts, src/store.ts, src/editor/settings/SettingsPanel.tsx, src/agent/session.ts, src/ai/useEditStream.ts)
+- `[x]` E.10 PLAN.md and CHANGES.md updated. (PLAN.md, CHANGES.md)
 
 Note: Spatial directives (draw-to-animate) removed from scope — deferred to future features.
+Asset sourcing (fetch_external_asset tool) deferred to Phase F.
 See `Plans/agentic-transformation-plan.md` section 17b for design notes when revisiting.
 
 See `Plans/agentic-transformation-plan.md` sections 10, 11, 14, and 17.

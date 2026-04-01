@@ -43,11 +43,17 @@ export interface ToolResultTextContent {
   text: string;
 }
 
+export type SupportedImageMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/gif"
+  | "image/webp";
+
 export interface ToolResultImageContent {
   type: "image";
   source: {
     type: "base64";
-    media_type: "image/png";
+    media_type: SupportedImageMediaType;
     data: string;
   };
 }
@@ -65,7 +71,7 @@ export interface ImageContentBlock {
   type: "image";
   source: {
     type: "base64";
-    media_type: "image/png";
+    media_type: SupportedImageMediaType;
     data: string;
   };
   cache_control?: { type: "ephemeral" };

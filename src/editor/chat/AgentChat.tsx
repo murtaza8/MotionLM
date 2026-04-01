@@ -1,32 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, Square, Coins, Clock } from "lucide-react";
+import { MessageSquare, Send, Square, Coins, Clock, Paperclip, X, Mic } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { useShallow } from "zustand/react/shallow";
 
 import { useStore } from "@/store";
 import { AgentState } from "@/agent/types";
 import { AgentSession } from "@/agent/session";
+import { getOrCreateSession, setActiveSession } from "@/agent/active-session";
 import { listConversations, loadConversation } from "@/persistence/idb";
 
 import { MessageList } from "./MessageList";
 import { ContextPill } from "./ContextPill";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { VoiceInput } from "./VoiceInput";
+import type { VoiceInputHandle } from "./VoiceInput";
+import { VoiceIndicator } from "./VoiceIndicator";
 import { useProactiveAnalysis } from "./useProactiveAnalysis";
 
 // ---------------------------------------------------------------------------
-// Module-level session reference
+// Constants
 // ---------------------------------------------------------------------------
 
-let activeSession: AgentSession | null = null;
-
-const getOrCreateSession = (): AgentSession => {
-  if (activeSession === null) {
-    const { conversationHistory, activeSessionId } = useStore.getState();
-    const isRestored = conversationHistory.length > 0 && activeSessionId !== null;
-    activeSession = isRestored ? AgentSession.resume() : AgentSession.create();
-  }
-  return activeSession;
-};
+const STARTER_PROMPTS = [
+  "Create a bouncing logo animation",
+  "Make a text reveal with spring entrance",
+  "Build a lower-third for a news broadcast",
+  "Create a 5-second countdown timer",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,17 +40,6 @@ interface SessionSummary {
   messageCount: number;
 }
 
-// ---------------------------------------------------------------------------
-// AgentChat
-// ---------------------------------------------------------------------------
-
-/**
- * Persistent right-side chat panel. Contains:
- * - Header with token usage counter, session history popover, and new-session button
- * - Message list (scrollable)
- * - Thinking indicator (visible during agent execution)
- * - Input area with context pill and send/abort button
- */
 // ---------------------------------------------------------------------------
 // TokenBadge — isolated component so token usage updates don't re-render
 // the entire AgentChat tree.
@@ -78,12 +67,21 @@ const TokenBadge = () => {
 // AgentChat
 // ---------------------------------------------------------------------------
 
+/**
+ * Persistent right-side chat panel. Contains:
+ * - Header with token usage counter, session history popover, and new-session button
+ * - Starter prompts (when conversation is empty and API key is set)
+ * - Message list (scrollable, when conversation has messages)
+ * - Thinking indicator (visible during agent execution)
+ * - Input area with context pill, image attachment, voice input, and send/abort button
+ */
 export const AgentChat = () => {
-  const { agentState, apiKey, proactiveSuggestions, dismissSuggestion } =
+  const { agentState, apiKey, conversationHistory, proactiveSuggestions, dismissSuggestion } =
     useStore(
       useShallow((s) => ({
         agentState: s.agentState,
         apiKey: s.apiKey,
+        conversationHistory: s.conversationHistory,
         proactiveSuggestions: s.proactiveSuggestions,
         dismissSuggestion: s.dismissSuggestion,
       }))
@@ -94,10 +92,19 @@ export const AgentChat = () => {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Image attachment state
+  const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice state
+  const [voiceActive, setVoiceActive] = useState(false);
+  const voiceInputRef = useRef<VoiceInputHandle>(null);
+
   // Session history popover state
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const sessionLoadingRef = useRef(false);
 
   const isRunning =
     agentState === AgentState.THINKING || agentState === AgentState.TOOL_CALL;
@@ -117,17 +124,27 @@ export const AgentChat = () => {
     if (!text || isRunning) return;
 
     setInput("");
+    const image = pendingImage;
+    setPendingImage(null);
+
+    const session = getOrCreateSession();
+    await session.send(text, image !== null ? { imageAttachment: image } : undefined);
+  }, [input, isRunning, pendingImage]);
+
+  const handleSendImmediate = useCallback(async (text: string) => {
+    if (isRunning) return;
     const session = getOrCreateSession();
     await session.send(text);
-  }, [input, isRunning]);
+  }, [isRunning]);
 
   const handleAbort = useCallback(() => {
-    activeSession?.abort();
+    const session = getOrCreateSession();
+    session.abort();
   }, []);
 
   const handleNewSession = useCallback(() => {
-    activeSession?.abort();
-    activeSession = AgentSession.create();
+    const newSession = AgentSession.create();
+    setActiveSession(newSession);
   }, []);
 
   const handleKeyDown = useCallback(
@@ -145,6 +162,25 @@ export const AgentChat = () => {
     [canSend, handleSend, isRunning, handleAbort]
   );
 
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!imageInputRef.current) return;
+    imageInputRef.current.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result !== "string") return;
+      const base64 = result.split(",")[1] ?? "";
+      setPendingImage({ base64, mediaType: file.type || "image/png" });
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleVoiceTranscript = useCallback((text: string, frame: number) => {
+    setInput(`[Frame ${frame}] ${text}`);
+  }, []);
+
   const loadSessions = useCallback(async () => {
     setSessionLoadError(null);
     const result = await listConversations();
@@ -153,16 +189,20 @@ export const AgentChat = () => {
 
   const handleSessionClick = useCallback(
     async (sessionId: string) => {
+      if (sessionLoadingRef.current) return;
+      sessionLoadingRef.current = true;
       setSessionLoadError(null);
       const messages = await loadConversation(sessionId);
+      sessionLoadingRef.current = false;
       if (messages === null) {
         setSessionLoadError("Session not found");
         return;
       }
-      // Abort any running agent before switching — prevents it from appending
-      // messages to the newly restored conversation.
-      activeSession?.abort();
-      activeSession = null; // force re-creation via resume() on next send
+      // Abort any running agent before switching
+      const currentSession = getOrCreateSession();
+      currentSession.abort();
+      setActiveSession(null); // force re-creation via resume() on next send
+      setPendingImage(null);
       useStore.setState({
         conversationHistory: messages,
         activeSessionId: sessionId,
@@ -176,6 +216,14 @@ export const AgentChat = () => {
 
   return (
     <div className="flex flex-col h-full glass-panel border-l border-[var(--glass-border-subtle)]">
+      {/* Voice input — renders null, handles Cmd+Shift+V globally */}
+      <VoiceInput
+        ref={voiceInputRef}
+        onTranscript={handleVoiceTranscript}
+        onActiveChange={setVoiceActive}
+        disabled={isRunning}
+      />
+
       {/* Header */}
       <div className="px-3 py-2 border-b border-[var(--glass-border-subtle)] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
@@ -186,6 +234,7 @@ export const AgentChat = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <VoiceIndicator active={voiceActive} />
           <TokenBadge />
 
           {/* Session history popover */}
@@ -286,8 +335,28 @@ export const AgentChat = () => {
         </div>
       )}
 
-      {/* Messages */}
-      {apiKey !== null && <MessageList />}
+      {/* Starter prompts — shown when API key is set and no conversation yet */}
+      {apiKey !== null && conversationHistory.length === 0 && (
+        <div className="flex-1 flex flex-col items-center justify-center px-4 gap-4">
+          <p className="text-sm font-medium text-[var(--text-primary)]">What would you like to create?</p>
+          <div className="grid grid-cols-2 gap-2 w-full">
+            {STARTER_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => void handleSendImmediate(prompt)}
+                disabled={isRunning}
+                className="bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-left text-[var(--text-primary)] hover:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Messages — only when conversation has history */}
+      {apiKey !== null && conversationHistory.length > 0 && <MessageList />}
 
       {/* Thinking indicator */}
       {apiKey !== null && (
@@ -341,12 +410,30 @@ export const AgentChat = () => {
             <ContextPill />
           </div>
 
+          {/* Image attachment preview */}
+          {pendingImage !== null && (
+            <div className="relative inline-block">
+              <img
+                src={`data:${pendingImage.mediaType};base64,${pendingImage.base64}`}
+                alt="Attachment preview"
+                className="max-h-12 rounded border border-[var(--glass-border-subtle)]"
+              />
+              <button
+                type="button"
+                onClick={() => setPendingImage(null)}
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-neutral-700 flex items-center justify-center text-[var(--text-primary)] hover:bg-neutral-600"
+                aria-label="Remove image"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          )}
+
           {/* Textarea + send */}
-          <div className="flex items-end gap-1.5">
+          <div className="flex items-stretch gap-1.5">
             <textarea
               ref={inputRef}
-              rows={2}
-              className="flex-1 bg-[var(--glass-bg-1)] border border-[var(--glass-border-subtle)] rounded-lg px-2.5 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] resize-none focus:outline-none focus:border-[var(--glass-border-strong)]"
+              className="flex-1 h-full bg-[var(--glass-bg-1)] border border-[var(--glass-border-subtle)] rounded-lg px-2.5 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] resize-none focus:outline-none focus:border-[var(--glass-border-strong)]"
               placeholder={
                 isRunning
                   ? "Agent is working... Escape to abort"
@@ -356,6 +443,35 @@ export const AgentChat = () => {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isRunning}
+            />
+
+            {/* Mic + paperclip stacked vertically */}
+            <div className="flex flex-col gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => voiceInputRef.current?.toggle()}
+                disabled={isRunning}
+                className={`p-2 rounded glass-panel glass-hover disabled:opacity-30 disabled:cursor-not-allowed ${voiceActive ? "glass-tint-red" : ""}`}
+                title="Voice input (⌘⇧V)"
+              >
+                <Mic className={`w-3.5 h-3.5 ${voiceActive ? "text-red-300" : "text-[var(--text-primary)]"}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={isRunning || apiKey === null}
+                className="p-2 rounded glass-panel glass-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Attach image"
+              >
+                <Paperclip className="w-3.5 h-3.5 text-[var(--text-primary)]" />
+              </button>
+            </div>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="hidden"
+              onChange={handleImageSelect}
             />
 
             {isRunning ? (
@@ -381,7 +497,7 @@ export const AgentChat = () => {
           </div>
 
           <span className="text-[10px] text-[var(--text-tertiary)]">
-            Shift+Enter for newline
+            Shift+Enter for newline · ⌘⇧V to speak
           </span>
         </div>
       )}

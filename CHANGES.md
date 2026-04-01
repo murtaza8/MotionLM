@@ -10,6 +10,45 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## Phase E code review: 7 bugs fixed (2026-04-01)
+
+**Bug 1 — Image media_type union too narrow** (`src/agent/types.ts`, `src/ai/client.ts`, `src/agent/session.ts`):
+`ImageContentBlock` and `ToolResultImageContent` both locked `media_type` to `"image/png"`. Anthropic's API accepts PNG, JPEG, GIF, and WebP. Added `SupportedImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp"` to `types.ts`, updated both inline definitions in `client.ts` to use it, updated the cast in `session.ts`, and restricted the file input `accept` to the four supported types only.
+
+**Bug 2 — pendingImage not cleared on session switch** (`src/editor/chat/AgentChat.tsx`):
+Switching sessions via the history popover left a pending image attachment visible in the new session context. Added `setPendingImage(null)` to `handleSessionClick`.
+
+**Bug 3 — Voice frame captured at recording start, not at transcript receipt** (`src/editor/chat/VoiceInput.tsx`):
+If the timeline was playing while the user spoke, the `[Frame N]` prefix would reflect the frame from when recording started, not when the words were captured. Moved `capturedFrameRef.current = useStore.getState().currentFrame` into the `onresult` handler.
+
+**Bug 4 — VoiceInput missing displayName** (`src/editor/chat/VoiceInput.tsx`):
+`forwardRef` components without `displayName` show as `ForwardRef(undefined)` in React DevTools. Added `VoiceInput.displayName = "VoiceInput"`.
+
+**Bug 5 — Session load race condition** (`src/editor/chat/AgentChat.tsx`):
+Rapid clicks on session history rows could fire concurrent `loadConversation` calls; the last one to resolve would win regardless of click order. Added `sessionLoadingRef` guard: the handler is a no-op while a load is in flight and clears the flag on both success and error paths.
+
+**Bug 6 — Timeline ruler divide-by-zero at 0 frames** (`src/editor/layout/TimelinePanel.tsx`):
+`rulerInterval(0)` divided by zero and fell through to the 600-frame default, rendering a broken ruler. Added early return `if (totalFrames <= 0) return 1`.
+
+**Improvement — Remove unused `maxTokens` from ModelConfig** (`src/agent/models.ts`):
+`maxTokens: number` was defined on `ModelConfig` and hardcoded to 8192 for all models but never read anywhere. Removed to keep the interface honest.
+
+---
+
+## Voice input: mic button + Cmd+Shift+V toggle, replaced spacebar hold (2026-04-01)
+
+Spacebar-hold-to-talk conflicted with the play/pause shortcut and was awkward to use. Replaced with:
+
+- **Mic button** in the chat input area, stacked above the paperclip button. Active state turns red (`glass-tint-red`). Click to start recording; recognition auto-stops on silence, which also deactivates the button.
+- **Cmd+Shift+V** keyboard shortcut (toggle). Works from any context except when a text input is focused — that guard was removed since the shortcut no longer conflicts with typing.
+- `VoiceInput` now uses `forwardRef` and exposes a `VoiceInputHandle` with a `toggle()` method so the mic button in `AgentChat` can trigger it imperatively.
+- Callback refs (`onTranscriptRef`, `onActiveChangeRef`, `disabledRef`) keep event handlers stable without re-registering on every render.
+- Hint text updated to `⌘⇧V to speak`.
+
+- Files: `src/editor/chat/VoiceInput.tsx`, `src/editor/chat/AgentChat.tsx`
+
+---
+
 ## Stronger capture tool guardrails — agent was still calling capture on "hi" (2026-04-01)
 
 The initial Fix 2 softened the system prompt `<visual-grounding>` section but the agent still called `capture_sequence` on simple greetings. Two root causes:

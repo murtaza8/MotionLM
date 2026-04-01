@@ -3,32 +3,33 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Eye, EyeOff } from "lucide-react";
 
 import { useStore } from "@/store";
+import { listModels } from "@/agent/models";
 
 export const SettingsPanel = () => {
   const settingsPanelOpen = useStore((s) => s.settingsPanelOpen);
   const closeSettingsPanel = useStore((s) => s.closeSettingsPanel);
   const apiKey = useStore((s) => s.apiKey);
-  const modelPreference = useStore((s) => s.modelPreference);
+  const modelId = useStore((s) => s.modelId);
   const setApiKey = useStore((s) => s.setApiKey);
-  const setModelPreference = useStore((s) => s.setModelPreference);
+  const setModelId = useStore((s) => s.setModelId);
 
   const [localKey, setLocalKey] = useState("");
-  const [localModel, setLocalModel] = useState<"sonnet" | "opus">("sonnet");
+  const [localModel, setLocalModel] = useState<string>("claude-sonnet-4-6");
   const [showKey, setShowKey] = useState(false);
 
   // Sync local state from store when panel opens
   useEffect(() => {
     if (settingsPanelOpen) {
       setLocalKey(apiKey ?? "");
-      setLocalModel(modelPreference);
+      setLocalModel(modelId);
       setShowKey(false);
     }
-  }, [settingsPanelOpen, apiKey, modelPreference]);
+  }, [settingsPanelOpen, apiKey, modelId]);
 
   const handleSave = () => {
     const trimmed = localKey.trim();
     setApiKey(trimmed || null);
-    setModelPreference(localModel);
+    setModelId(localModel);
     closeSettingsPanel();
   };
 
@@ -81,33 +82,18 @@ export const SettingsPanel = () => {
 
           {/* Model */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs uppercase tracking-widest text-[var(--text-tertiary)]">
+            <label className="text-xs uppercase tracking-widest text-[var(--text-tertiary)]">
               Model
-            </span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                className={`px-3 py-1.5 rounded text-xs transition-colors ${
-                  localModel === "sonnet"
-                    ? "glass-tint-blue text-blue-300"
-                    : "glass-well text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-                onClick={() => setLocalModel("sonnet")}
-              >
-                Sonnet
-              </button>
-              <button
-                type="button"
-                className={`px-3 py-1.5 rounded text-xs transition-colors ${
-                  localModel === "opus"
-                    ? "glass-tint-blue text-blue-300"
-                    : "glass-well text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-                onClick={() => setLocalModel("opus")}
-              >
-                Opus
-              </button>
-            </div>
+            </label>
+            <select
+              className="w-full bg-[var(--glass-bg-1)] border border-[var(--glass-border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--glass-border-strong)]"
+              value={localModel}
+              onChange={(e) => setLocalModel(e.target.value)}
+            >
+              {listModels().map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Actions */}

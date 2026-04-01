@@ -17,7 +17,7 @@ import {
 import { appendEditJournalEntry } from "@/persistence/idb";
 import { AgentState } from "./types";
 
-import type { AgentMessage, TextContentBlock } from "./types";
+import type { AgentMessage, ImageContentBlock, SupportedImageMediaType, TextContentBlock } from "./types";
 import type { AgentStoreSnapshot } from "./context";
 import type { CacheManagerState } from "./cache-manager";
 
@@ -106,7 +106,10 @@ export class AgentSession {
    * Dispatches all state changes, streamed text, tool results, and token
    * usage to the Zustand store.
    */
-  async send(userText: string): Promise<void> {
+  async send(
+    userText: string,
+    options?: { imageAttachment?: { base64: string; mediaType: string } }
+  ): Promise<void> {
     const store = useStore.getState();
 
     if (
@@ -116,17 +119,14 @@ export class AgentSession {
       return; // Already running — caller should abort first
     }
 
-    const { apiKey, modelPreference, conversationHistory } = store;
+    const { apiKey, modelId, conversationHistory } = store;
 
     if (!apiKey) {
       store.setAgentState(AgentState.ERROR);
       return;
     }
 
-    const model =
-      modelPreference === "opus"
-        ? "claude-opus-4-6"
-        : "claude-sonnet-4-6";
+    const model = modelId;
 
     // Build snapshot once — avoid stale reads mid-async
     const snapshot: AgentStoreSnapshot = {
@@ -149,6 +149,21 @@ export class AgentSession {
     const userMessage: AgentMessage = !hasSuccessfulHistory
       ? buildAgentUserMessage(snapshot, userText)
       : buildFollowUpUserMessage(snapshot, userText);
+
+    // Append image attachment block if provided (inserted before the instruction block)
+    if (options?.imageAttachment) {
+      const { base64, mediaType } = options.imageAttachment;
+      const imageBlock: ImageContentBlock = {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: mediaType as SupportedImageMediaType,
+          data: base64,
+        },
+      };
+      // Insert before the last text block (the instruction)
+      userMessage.content = [...userMessage.content.slice(0, -1), imageBlock, ...userMessage.content.slice(-1)];
+    }
 
     // Append user message to history
     store.appendMessage(userMessage);
