@@ -14,9 +14,10 @@ import {
   recordProfileUpdate,
   shouldUpdateProfile,
 } from "./cache-manager";
+import { appendEditJournalEntry } from "@/persistence/idb";
 import { AgentState } from "./types";
 
-import type { AgentMessage } from "./types";
+import type { AgentMessage, TextContentBlock } from "./types";
 import type { AgentStoreSnapshot } from "./context";
 import type { CacheManagerState } from "./cache-manager";
 
@@ -44,6 +45,24 @@ export class AgentSession {
   static create(): AgentSession {
     const session = new AgentSession();
     useStore.getState().resetSession();
+    return session;
+  }
+
+  /**
+   * Create a session that continues the conversation already in the store
+   * (e.g. restored from IDB on page load). Does NOT call resetSession —
+   * conversationHistory and activeSessionId are preserved.
+   */
+  static resume(): AgentSession {
+    const session = new AgentSession();
+    session.isFirstTurn = false;
+    // Reset only transient per-session state, leave history + sessionId intact.
+    useStore.setState({
+      agentState: AgentState.IDLE,
+      pendingToolCalls: [],
+      iterationCount: 0,
+      thinkLog: [],
+    });
     return session;
   }
 
@@ -150,6 +169,32 @@ export class AgentSession {
             // The think tool is zero-cost and should not advance the counter.
             if (action.toolName !== "think") {
               this.cacheState = recordEdit(this.cacheState);
+            }
+            if (action.toolName === "edit_file" || action.toolName === "create_file") {
+              const input = action.input as { path?: string };
+              const lastUserMsg = [...s.conversationHistory]
+                .reverse()
+                .find((m) => m.role === "user");
+              const instruction =
+                lastUserMsg?.content
+                  .find(
+                    (b): b is TextContentBlock =>
+                      b.type === "text" && b.text.trim().length > 0
+                  )
+                  ?.text.slice(0, 200) ?? "unknown";
+              void appendEditJournalEntry({
+                sessionId: s.activeSessionId ?? "unknown",
+                instruction,
+                elementTargeted: s.selectedElementId ?? null,
+                filePath:
+                  typeof input.path === "string"
+                    ? input.path
+                    : s.activeFilePath ?? "",
+                wasAccepted: action.isError !== true,
+                compilationAttempts: 1,
+                errorTypes: action.isError ? [action.result.slice(0, 100)] : [],
+                timestamp: Date.now(),
+              });
             }
             break;
           }

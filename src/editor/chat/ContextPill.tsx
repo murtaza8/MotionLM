@@ -13,7 +13,6 @@ import { useStore } from "@/store";
  */
 export const ContextPill = () => {
   const selectedElementId = useStore((s) => s.selectedElementId);
-  const selectedFrame = useStore((s) => s.selectedFrame);
 
   if (selectedElementId === null) return null;
 

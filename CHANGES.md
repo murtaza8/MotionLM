@@ -10,6 +10,16 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## Agent edits now create history snapshots (2026-04-01)
+
+`edit_file` and `create_file` tools now call `store.pushSnapshot()` after every successful compilation and store commit. Previously, agent edits updated the preview but never appeared in the History panel ("No history yet" was shown even after a successful edit).
+
+- Files: `src/agent/tools/edit-file.ts`, `src/agent/tools/create-file.ts`
+- `edit-file.ts`: calls `store.pushSnapshot(\`Agent edited ${path}\`)` after `setActiveCode` / `createFile`
+- `create-file.ts`: calls `store.pushSnapshot(\`Agent created ${path}\`)` after `createFile`
+
+---
+
 ## ContextPill shows source line number (2026-03-31)
 
 `ContextPill` in the agent chat input now displays `@div:148` (the element's source line number from `selectedElementId`) instead of `@div:0` (which was incorrectly appending the current playback frame). The `selectedElementId` already encodes `tagName:lineNumber`, so the pill now renders it directly.
@@ -93,6 +103,78 @@ When you make a change that is not part of a PLAN.md task, append an entry here:
 ---
 
 <!-- Add new entries below this line, newest first -->
+
+## 2026-04-01 — Phase C code review: four bugs fixed
+
+**1. `getDB` timeout nulled `dbPromise` after a successful open** (`src/persistence/idb.ts`)
+The 5-second safety-net timer called `dbPromise = null` unconditionally, even if `openDB` resolved in ~100ms. After 5 seconds, every `getDB()` call opened a new connection — silent connection leaks, potential version-change conflicts, and wasted IDB roundtrips. Fix: chain `.then((db) => { clearTimeout(timeoutId); return db; })` on `openPromise` so the timer is cancelled the moment the DB opens successfully.
+
+**2. `subscribeToStore` dropped conversation saves when VFS changed in the same debounce window** (`src/persistence/idb.ts`)
+`shouldSaveConversation` was a per-subscriber-call local. If a VFS state change followed a conversation change within 500ms, the new debounce timer captured `shouldSaveConversation = false`, silently discarding the conversation update — it was never written to IDB until the next standalone conversation change. Fix: replaced with outer-scope sticky flags (`pendingVFS`, `pendingConversation`) that are set to `true` on change and reset to `false` only after the actual write fires. The timer now reads fresh state from `useStore.getState()` at fire time rather than from the subscriber closure, so it always writes the latest values. As a bonus, `writeToIDB` is now skipped when only the conversation changed (no VFS write needed).
+
+**3. React StrictMode double-subscription** (`src/App.tsx`)
+`main.tsx` wraps the app in `<StrictMode>`, which double-invokes effects in development. `subscribeToStore()` was called inside the async `hydrate()` function with the return value discarded, so the `useEffect` cleanup had nothing to call. Each StrictMode cycle added a new subscription, doubling IDB writes with no way to clean up. Fix: moved `subscribeToStore()` to the synchronous part of the effect so its return value can be used as the `useEffect` cleanup function (`return unsubscribe`). Subscribing before hydration is safe — the subscriber only fires on reference changes, and `applyRestoredState` produces those by setting a new `files` Map.
+
+**4. Session history switch didn't abort the running agent or reset state** (`src/editor/chat/AgentChat.tsx`)
+`handleSessionClick` called `useStore.setState({ conversationHistory, activeSessionId })` without aborting the currently-running agent. If the agent was mid-execution, it continued appending messages to the newly restored conversation, contaminating it. `activeSession` was also left as the old instance, so the next send used `isFirstTurn = false` and the wrong `cacheState` for the restored session. Fix: `activeSession?.abort()` + `activeSession = null` before `setState`, and include `agentState: IDLE` and `pendingToolCalls: []` in the setState call so the UI transitions cleanly.
+
+Files: `src/persistence/idb.ts`, `src/App.tsx`, `src/editor/chat/AgentChat.tsx`
+
+## 2026-04-01 — Fix: restored conversation wiped on first send after page refresh
+
+`AgentSession.create()` calls `resetSession()` which sets `conversationHistory = []`. When a conversation was restored from IDB during hydration, the first message the user sent would silently wipe it — the session resumed from scratch instead of continuing.
+
+Fix: added `AgentSession.resume()` (src/agent/session.ts) — creates a session without calling `resetSession()`, sets `isFirstTurn = false` (so `buildFollowUpUserMessage` is used, appropriate for a continuing conversation), and only resets transient state (agentState, pendingToolCalls, iterationCount, thinkLog).
+
+`getOrCreateSession()` in `AgentChat.tsx` now calls `resume()` when the store already has a non-empty `conversationHistory` with a valid `activeSessionId` (i.e. a conversation was restored from IDB), and `create()` otherwise.
+
+Files: `src/agent/session.ts`, `src/editor/chat/AgentChat.tsx`
+
+## 2026-04-01 — Hydration safety net: IDB timeout + try/finally
+
+`hydrate()` in `App.tsx` could hang forever if `openDB` never resolved (blocked upgrade or corrupted state), leaving `hydrated = false` and the "Loading project..." screen up permanently. Two defensive changes:
+
+- `getDB()` in `src/persistence/idb.ts`: races `openDB` against a 5-second timeout. If IDB doesn't open within 5s, the promise rejects, `dbPromise` is cleared (allowing a retry on the next call), and all callers' `try/catch` blocks return safe fallbacks (`null` / `[]`).
+- `hydrate()` in `src/App.tsx`: wrapped in `try/finally` so `setHydrated(true)` + `subscribeToStore()` are guaranteed to fire even if an unexpected error escapes the individual IDB call handlers. Adds `console.error` for visibility.
+
+Files: `src/persistence/idb.ts`, `src/App.tsx`
+
+## 2026-04-01 — Fix slow/stuck initial load after Phase C
+
+Two root causes, both fixed:
+
+**Vite dep optimization loop** (`vite.config.ts`): `@radix-ui/react-popover` was in `package.json` but never imported in source code before Phase C. When Vite's dev server encounters a new dep import for the first time during a page load, it pre-bundles it and triggers a page reload. With several transitive deps (`@floating-ui/dom` etc.) this could loop long enough to appear hung. Added `optimizeDeps.include` for all Radix UI and floating-ui packages so they are pre-bundled at server startup instead.
+
+**IDB v1→v2 upgrade blocked** (`src/persistence/idb.ts`): If a stale v1 connection is open (e.g. from a previous tab or Vite HMR module re-evaluation), the v2 `openDB` call hangs indefinitely — no reject, no resolve — which keeps `hydrated` false and the loading screen up forever. Added `blocked` callback (reloads the page, closing the stale connection) and `blocking` callback (closes this connection if a newer version tries to open).
+
+Files: `vite.config.ts`, `src/persistence/idb.ts`
+
+## 2026-04-01 — Phase C: Memory layer (conversation persistence + edit journal)
+
+Session history and edit tracking are now persisted to IndexedDB.
+
+**IDB schema v2** (`src/persistence/idb.ts`):
+- `conversations` store (keyed by sessionId, indexed by lastActiveAt): stores full `AgentMessage[]` + preview text + timestamps. `saveConversation` upserts; `loadConversation` fetches by id; `listConversations` returns all sorted newest-first with message count.
+- `editJournal` store (auto-increment key, indexed by elementTargeted): appended after every `edit_file` or `create_file` tool result. `appendEditJournalEntry` / `getRecentJournalEntries` are the public API.
+- Upgrade handler is additive (`oldVersion < 1` creates original stores, `oldVersion < 2` creates new ones) — existing DBs upgrade without data loss.
+
+**Auto-save** (`src/persistence/idb.ts — subscribeToStore`):
+- The existing debounced subscriber now also watches `conversationHistory`. When it changes and `activeSessionId` is non-null, `saveConversation` is called in the same debounced callback as the VFS write (no second timer).
+- `extractPreview` scans messages for the first non-empty user text block (max 80 chars) to populate the preview field.
+
+**Hydration restore** (`src/App.tsx`):
+- After `applyRestoredState`, the most recent conversation is loaded from IDB if it is under 24 hours old. `conversationHistory` and `activeSessionId` are applied in a single `setState` call before `setHydrated(true)` to prevent a race with `resetSession`.
+
+**Edit journal writes** (`src/agent/session.ts`, `src/agent/runner.ts`, `src/agent/types.ts`):
+- `tool_call_result` action now carries `input: Record<string, unknown>` (the parsed tool input). Runner hoists `toolInput` out of the `try` block so it is always in scope at the yield site.
+- Session's `tool_call_result` handler appends an `EditJournalEntry` for `edit_file` and `create_file` calls — fire-and-forget, does not block the agent loop.
+
+**Session history popover** (`src/editor/chat/AgentChat.tsx`):
+- Clock icon button in the chat header opens a Radix Popover. Content loads lazily on open via `listConversations()`.
+- Displays up to 20 sessions with relative date ("Today", "Yesterday", "Apr 1"), preview text, and message count.
+- Clicking a row calls `loadConversation` and restores via `useStore.setState`; inline error shown if the record is missing.
+
+**Out of scope for Phase C**: Style Extractor, User Profile store, System Prompt Injection — excluded due to complexity vs. value trade-off.
 
 ## 2026-03-31 — runner.ts: tighten toolResultContent type
 

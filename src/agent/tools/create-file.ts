@@ -57,6 +57,7 @@ export const createFileTool: AgentTool = {
     }
 
     store.createFile(path, code);
+    store.pushSnapshot(`Agent created ${path}`);
     return { type: "text", text: `Created ${path}.` };
   },
 };

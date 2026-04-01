@@ -62,6 +62,8 @@ export const editFileTool: AgentTool = {
       store.setActiveCode(path, code);
     }
 
+    store.pushSnapshot(`Agent edited ${path}`);
+
     return {
       type: "text",
       text: `Successfully compiled and applied ${path}.`,

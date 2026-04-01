@@ -97,6 +97,7 @@ export type AgentAction =
       type: "tool_call_result";
       toolName: string;
       toolUseId: string;
+      input: Record<string, unknown>;
       result: string;
       isError?: boolean;
     }

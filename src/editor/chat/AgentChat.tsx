@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, Square, Coins } from "lucide-react";
+import { MessageSquare, Send, Square, Coins, Clock } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
 
 import { useStore } from "@/store";
 import { AgentState } from "@/agent/types";
 import { AgentSession } from "@/agent/session";
+import { listConversations, loadConversation } from "@/persistence/idb";
 
 import { MessageList } from "./MessageList";
 import { ContextPill } from "./ContextPill";
@@ -17,10 +19,24 @@ let activeSession: AgentSession | null = null;
 
 const getOrCreateSession = (): AgentSession => {
   if (activeSession === null) {
-    activeSession = AgentSession.create();
+    const { conversationHistory, activeSessionId } = useStore.getState();
+    const isRestored = conversationHistory.length > 0 && activeSessionId !== null;
+    activeSession = isRestored ? AgentSession.resume() : AgentSession.create();
   }
   return activeSession;
 };
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SessionSummary {
+  sessionId: string;
+  preview: string;
+  createdAt: number;
+  lastActiveAt: number;
+  messageCount: number;
+}
 
 // ---------------------------------------------------------------------------
 // AgentChat
@@ -28,7 +44,7 @@ const getOrCreateSession = (): AgentSession => {
 
 /**
  * Persistent right-side chat panel. Contains:
- * - Header with token usage counter and new-session button
+ * - Header with token usage counter, session history popover, and new-session button
  * - Message list (scrollable)
  * - Thinking indicator (visible during agent execution)
  * - Input area with context pill and send/abort button
@@ -40,6 +56,11 @@ export const AgentChat = () => {
 
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Session history popover state
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 
   const isRunning =
     agentState === AgentState.THINKING || agentState === AgentState.TOOL_CALL;
@@ -87,6 +108,35 @@ export const AgentChat = () => {
     [canSend, handleSend, isRunning, handleAbort]
   );
 
+  const loadSessions = useCallback(async () => {
+    setSessionLoadError(null);
+    const result = await listConversations();
+    setSessions(result.slice(0, 20));
+  }, []);
+
+  const handleSessionClick = useCallback(
+    async (sessionId: string) => {
+      setSessionLoadError(null);
+      const messages = await loadConversation(sessionId);
+      if (messages === null) {
+        setSessionLoadError("Session not found");
+        return;
+      }
+      // Abort any running agent before switching — prevents it from appending
+      // messages to the newly restored conversation.
+      activeSession?.abort();
+      activeSession = null; // force re-creation via resume() on next send
+      useStore.setState({
+        conversationHistory: messages,
+        activeSessionId: sessionId,
+        agentState: AgentState.IDLE,
+        pendingToolCalls: [],
+      });
+      setHistoryOpen(false);
+    },
+    []
+  );
+
   const totalTokens = tokenUsage.input + tokenUsage.output;
 
   return (
@@ -112,6 +162,75 @@ export const AgentChat = () => {
               )}
             </span>
           )}
+
+          {/* Session history popover */}
+          <Popover.Root
+            open={historyOpen}
+            onOpenChange={(open) => {
+              setHistoryOpen(open);
+              if (open) void loadSessions();
+            }}
+          >
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                className="text-[var(--text-tertiary)] glass-hover rounded p-1"
+                title="Session history"
+              >
+                <Clock className="w-3 h-3" />
+              </button>
+            </Popover.Trigger>
+
+            <Popover.Portal>
+              <Popover.Content
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                className="z-50 w-72 rounded-lg glass-panel border border-[var(--glass-border-subtle)] shadow-xl p-2 focus:outline-none"
+              >
+                <p className="text-[10px] font-medium uppercase tracking-widest text-[var(--text-tertiary)] px-1 pb-1.5">
+                  Recent sessions
+                </p>
+
+                {sessionLoadError !== null && (
+                  <p className="text-[10px] text-red-400 px-1 pb-1">
+                    {sessionLoadError}
+                  </p>
+                )}
+
+                {sessions.length === 0 && sessionLoadError === null && (
+                  <p className="text-[10px] text-[var(--text-tertiary)] px-1 py-2">
+                    No sessions yet.
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                  {sessions.map((s) => (
+                    <button
+                      key={s.sessionId}
+                      type="button"
+                      onClick={() => void handleSessionClick(s.sessionId)}
+                      className="w-full text-left rounded px-2 py-1.5 glass-hover flex flex-col gap-0.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">
+                          {formatRelativeDate(s.createdAt)}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">
+                          {s.messageCount} messages
+                        </span>
+                      </div>
+                      <span className="text-xs text-[var(--text-primary)] truncate">
+                        {s.preview}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <Popover.Arrow className="fill-[var(--glass-border-subtle)]" />
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
 
           <button
             type="button"
@@ -215,4 +334,16 @@ export const AgentChat = () => {
 function formatTokenCount(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
   return String(count);
+}
+
+function formatRelativeDate(timestamp: number): string {
+  const now = new Date();
+  const date = new Date(timestamp);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+
+  if (timestamp >= todayStart) return "Today";
+  if (timestamp >= yesterdayStart) return "Yesterday";
+
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

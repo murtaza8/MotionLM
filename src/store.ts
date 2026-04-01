@@ -444,6 +444,7 @@ interface AgentSlice {
   useAgentChat: boolean;
   setAgentState: (state: AgentState) => void;
   appendMessage: (message: AgentMessage) => void;
+  setConversationHistory: (messages: AgentMessage[]) => void;
   setTokenUsage: (usage: TokenUsage) => void;
   incrementIteration: () => void;
   resetSession: () => void;
@@ -470,6 +471,9 @@ const createAgentSlice = (
 
   appendMessage: (message) =>
     set((s) => ({ conversationHistory: [...s.conversationHistory, message] })),
+
+  setConversationHistory: (messages) =>
+    set(() => ({ conversationHistory: messages })),
 
   setTokenUsage: (usage) => set(() => ({ tokenUsage: usage })),
 

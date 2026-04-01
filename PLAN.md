@@ -242,18 +242,22 @@ See `Plans/agentic-transformation-plan.md` sections 4 and 8.
 
 ---
 
-## Phase C: Memory Layer (2 weeks)
-Depends on Phase A.
+## Phase C: Memory Layer — COMPLETE
+Depends on Phase A. Style Extractor, User Profile, and System Prompt Injection excluded from scope.
 
-`[ ]` Tasks to be detailed when Phase A is complete.
+`[x]` **IDB schema v2** — `conversations` + `editJournal` stores with indexes; 5 public API functions (`saveConversation`, `loadConversation`, `listConversations`, `appendEditJournalEntry`, `getRecentJournalEntries`). (src/persistence/idb.ts)
 
-Key deliverables:
-- IndexedDB stores: conversations, userProfile, editJournal
-- Style extractor, profile store, edit journal
-- Session persistence and restoration
-- User profile injection into system prompt (batched updates for cache preservation)
+`[x]` **Auto-save** — `subscribeToStore` debounce saves conversation alongside VFS writes; sticky `pendingVFS`/`pendingConversation` flags prevent lost saves within debounce window. (src/persistence/idb.ts)
 
-See `Plans/agentic-transformation-plan.md` section 6.
+`[x]` **Hydration restore** — on load, App.tsx restores the most recent session (<24h old) into store after VFS hydration. (src/App.tsx)
+
+`[x]` **Session resume** — `AgentSession.resume()` preserves history and skips `resetSession`; `getOrCreateSession` uses it when a restored conversation exists. (src/agent/session.ts, src/editor/chat/AgentChat.tsx)
+
+`[x]` **Edit journal** — `tool_call_result` carries `input`; session writes a journal entry for every `edit_file`/`create_file` call. (src/agent/types.ts, src/agent/runner.ts, src/agent/session.ts)
+
+`[x]` **Session history popover** — clock icon in AgentChat header opens Radix Popover; lists up to 20 sessions with relative date, preview, message count; row click switches session. (src/editor/chat/AgentChat.tsx)
+
+`[x]` **History snapshots on agent edits** — `edit_file` and `create_file` tools call `store.pushSnapshot()` after every successful edit so changes appear in the History panel. (src/agent/tools/edit-file.ts, src/agent/tools/create-file.ts)
 
 ---
 

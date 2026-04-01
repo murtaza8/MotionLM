@@ -169,6 +169,7 @@ export async function* runAgent(
           type: "tool_call_result",
           toolName: block.name,
           toolUseId: block.id,
+          input: {},
           result: errorText,
           isError: true,
         };
@@ -180,9 +181,9 @@ export async function* runAgent(
         | { media_type: "image/png"; data: string }
         | null = null;
       let isError = false;
+      const toolInput = parseToolInput(block.partialJson);
 
       try {
-        const toolInput = parseToolInput(block.partialJson);
         const result = await tool.execute(toolInput);
         if (result.type === "text") {
           resultText = result.text;
@@ -223,6 +224,7 @@ export async function* runAgent(
         type: "tool_call_result",
         toolName: block.name,
         toolUseId: block.id,
+        input: toolInput,
         result: resultText,
         isError: isError || undefined,
       };
