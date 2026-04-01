@@ -240,9 +240,9 @@ When the agent suggests a proactive change (section 6), use `renderStill()` to c
 - Surfaces as dismissible suggestions in chat
 - **[v2]** Suggestions include before/after frame captures via `renderStill()` so the user can see the proposed fix visually
 
-### 7b. Style Consistency
-- `src/agent/proactive/style-checker.ts` -- Compares new edits against user's style profile
-- Example: "You typically use easeOut for entrances, but this uses linear. Match your style?"
+### 7b. Style Consistency [Deferred — see Section 17]
+- Depends on a meaningful user style profile, which requires a minimum of ~20-30 accepted edits to produce reliable signals.
+- Deferred until the style profile system has a real baseline. See Section 17 for the planned evolution path.
 
 ### 7c. Idle-Time Suggestions
 - `src/agent/proactive/idle-suggestions.ts` -- When user pauses >10s, analyzes composition via temporal map
@@ -399,9 +399,9 @@ The shift from "tool UI" to "collaborator UI":
 | **[v2]** No cost visibility | Token usage tracker in chat header |
 | **[v2]** No abort control | Abort button + Escape to stop agent mid-execution |
 | **[v2]** Breaks without API key | Full manual editor works; agent features are additive |
-| **[v3]** Text-only spatial input | Draw motion paths directly on the preview overlay |
 | **[v3]** Type-only interaction | Hold spacebar to speak while scrubbing the timeline |
 | **[v3]** Suggestions only in chat | Ghost tracks render proposed edits directly on the timeline |
+| **[v3]** Blank chat, no direction | Starter prompt suggestions + composition templates for new users |
 
 ---
 
@@ -422,8 +422,8 @@ The shift from "tool UI" to "collaborator UI":
 | **Sora/Runway/Pika APIs** | AI asset generation | Adopt as future tool stub. Full implementation when APIs stabilize. |
 | **Claude Vision** | Reference image analysis, visual verification | **Adopt.** Already supported, zero new deps. |
 | **MCP protocol** | Standardized tool interface | Adopt schema format now. Full MCP server wrapper in Phase F. |
-| **[v3] Spatial Directives** | Draw motion paths on preview overlay | **Adopt in Phase E.** Natural director interaction. Overlay.tsx already handles click detection. |
-| **[v3] Web Speech API** | Voice-to-action with frame context | **Adopt in Phase E.** Zero-dependency, ~85% browser coverage. Progressive enhancement. |
+| **[v3] Spatial Directives** | Draw motion paths on preview overlay | **Deferred to Section 17.** Poor value/complexity ratio for typical Remotion use cases. Real risk of breaking overlay click-to-select. Revisit if user feedback shows demand. |
+| **[v3] Web Speech API** | Voice-to-action with frame context | **Adopt in Phase E.** Zero-dependency, ~85% browser coverage. Progressive enhancement. Transcript appears in input before send — user reviews before agent acts. |
 | **[v3] Timeline Ghost Tracks** | Render proactive suggestions on timeline | **Adopt in Phase D.** Strong spatial UX. Timeline already renders sequence blocks. |
 | **[v3] Asset Sourcing APIs** | Unsplash/Pexels/Freesound for external assets | **Adopt in Phase E.** Fills real workflow gap. Needs attribution handling. |
 
@@ -471,29 +471,33 @@ Depends on Phase A.
 6. Session persistence and restoration
 7. Inject user profile into system prompt (as cacheable content)
 
-### Phase D: Proactive Intelligence + Ghost Tracks (1-2 weeks)
+### Phase D: Proactive Intelligence + Ghost Tracks (1 week)
 Depends on Phases A + B + C.
 
-1. `src/agent/proactive/post-edit-analyzer.ts`
-2. `src/agent/proactive/style-checker.ts`
-3. `src/agent/proactive/idle-suggestions.ts`
-4. Suggestion rendering in AgentChat with before/after frame captures
-5. **[v3]** `src/agent/proactive/ghost-track-generator.ts` -- Generate ghost TemporalNodes from proposed edits
-6. **[v3]** Extend `TimelinePanel.tsx` with ghost track rendering (semi-transparent blocks, inline accept/reject)
+1. `src/agent/proactive/post-edit-analyzer.ts` — heuristic checks: missing clamp, spring overshoot, text cutoff, sequence overlap
+2. `src/agent/proactive/idle-suggestions.ts` — fires after 10s idle: no exit animations, front-loaded timing, single bloated file
+3. Wire to AgentChat (agentSlice additions, dismissible suggestion cards above input)
+4. **[v3]** `src/agent/proactive/ghost-track-generator.ts` — pure data transform: maps suggestions to GhostTrack[] (no rendering yet)
 
-### Phase E: UI Migration + Director Inputs + External Integration (3 weeks)
+Note: style-checker.ts deferred (see Section 17). Ghost track rendering in TimelinePanel deferred to Phase E (see below).
+
+### Phase E: UI Migration + Onboarding + Director Inputs + External Integration (2-3 weeks)
 Depends on Phases A + B.
 
 1. Remove feature flag -- AgentChat becomes default
 2. Remove old CommandPalette and GenerateChat
 3. Restructure EditorLayout to final `[FileTree] [Preview+Timeline] [ChatPanel]` layout
-4. Reference image analysis via Claude vision
-5. `render_preview` tool (short GIF renders)
-6. `generate_asset` tool stub + server route
-7. Flexible model registry in `src/agent/models.ts`
-8. **[v3]** Spatial Directives: `src/inspector/path-capture.ts`, `PathPreview.tsx`, extend `Overlay.tsx` with drag-to-draw
-9. **[v3]** Voice-to-Action: `src/editor/chat/VoiceInput.tsx`, `VoiceIndicator.tsx`, spacebar-hold-to-talk with frame context
-10. **[v3]** Asset Sourcing: `fetch_external_asset` tool, `POST /api/fetch-asset` server route, attribution handling
+4. Empty state + starter prompts in AgentChat -- clickable example prompts when no conversation history
+5. Composition templates panel in FileTree -- loads sample compositions from src/samples/ into VFS
+6. Reference image upload in chat input -- image content block attached to next user message
+7. `render_preview` tool (short GIF renders)
+8. `generate_asset` tool stub + server route
+9. Flexible model registry in `src/agent/models.ts`
+10. **[v3]** Voice-to-Action: `src/editor/chat/VoiceInput.tsx`, `VoiceIndicator.tsx`, spacebar-hold-to-talk with frame context. No auto-send -- transcript lands in input for user review.
+11. **[v3]** Asset Sourcing: `fetch_external_asset` tool, `POST /api/fetch-asset` server route, attribution handling
+12. **[deferred from D]** Ghost track rendering in `TimelinePanel.tsx` -- semi-transparent dashed blocks, inline accept/reject.
+
+Note: Spatial Directives (draw-to-animate) removed from scope -- deferred to Section 17.
 
 ### Phase F: Advanced Features (ongoing)
 Depends on all previous phases.
@@ -560,5 +564,54 @@ Depends on all previous phases.
 | `src/editor/prompt/CommandPalette.tsx` | Remove | E |
 | `src/editor/prompt/ContextDisplay.tsx` | Remove (logic in AgentChat) | E |
 | `src/inspector/Overlay.tsx` | Add drag-to-draw path capture | E |
-| `src/editor/layout/TimelinePanel.tsx` | Add ghost track rendering | D |
+| `src/editor/layout/TimelinePanel.tsx` | Add ghost track rendering | E |
 | `server/render-server.ts` | Add POST /api/fetch-asset | E |
+
+---
+
+## 17. Potential Future Features
+
+### 17a. User Style System
+
+**Why deferred:** Style consistency checking (originally Phase D.2) requires a meaningful baseline profile — roughly 20-30 accepted edits — before it produces signal rather than noise. The current Phase C memory layer lays the groundwork (IDB schema, edit journal) but the profile is not populated enough to drive useful suggestions for most users.
+
+**Planned evolution path:**
+
+**Stage 1 — Style Library (curated presets):**
+- Ship a built-in library of named style presets: "Clean Corporate", "Kinetic Type", "Minimal Dark", "Vibrant Social", etc.
+- Each preset is a structured object: `{ easings, colors, fontSizes, springConfigs, typicalDurationRange }`
+- User selects a preset on first launch or in Settings. The selected profile is injected into the system prompt immediately, giving the style checker a baseline from day one.
+- Agent uses the preset as a soft constraint: "You selected Kinetic Type — this easing matches your style" or "This color is outside your palette. Keep it?"
+- Presets are stored in `src/agent/presets/style-library.ts` as a static registry.
+
+**Stage 2 — Intelligent profile learning:**
+- After each accepted edit, `style-extractor.ts` extracts signals and merges them into the active profile, gradually replacing preset values with observed values.
+- Profile drift is gradual: observed signals weight 20% per edit, preset values decay slowly. After ~30 accepted edits, the profile is majority user-derived.
+- Profile updates batch on session boundaries (per cache-manager.ts rules in Section 2) to avoid prompt cache invalidation.
+- A "Reset to preset" option in Settings lets the user wipe learned drift if it went in the wrong direction.
+
+**Stage 3 — Style diagnostics:**
+- Optional onboarding flow: agent generates 4-5 short sample compositions in different styles and asks the user to pick the one that resonates. This seeds the profile without requiring prior edits.
+- Revisitable via Settings: "Recalibrate my style" re-runs the diagnostic.
+
+**Files (when implemented):**
+- `src/agent/presets/style-library.ts` — static preset registry
+- `src/agent/memory/style-extractor.ts` — extract style signals from accepted code diffs
+- `src/agent/memory/profile-store.ts` — CRUD for user profile in IDB
+- `src/agent/proactive/style-checker.ts` — compare new edits against active profile
+- `get_user_profile` tool — agent can read the profile during composition generation
+
+---
+
+### 17b. Spatial Directives (Draw-to-Animate)
+
+**Why deferred:** Remotion's primary use cases (text animations, lower-thirds, logo intros, social media graphics) rarely require precise 2D motion paths. The complexity-to-value ratio is poor for the typical user. The deeper risk is the overlay: `Overlay.tsx` is critical infrastructure for click-to-select, and adding drag detection requires a fragile disambiguation heuristic (time + movement threshold) that will cause misclicks. The agent's translation of a point array into correct `interpolate()` keyframes is also uncertain — a bad result erodes trust more than not having the feature.
+
+**When to revisit:** If user feedback consistently surfaces "I want to draw paths" as a pain point, or if the composition type shifts toward motion graphics that require spatial path control (e.g., particle-following, camera tracking simulations).
+
+**Implementation notes (for when it is built):**
+- Modify `Overlay.tsx` to distinguish click (<200ms + <5px movement) from draw (drag beyond threshold). Click behavior must be preserved exactly.
+- `src/inspector/path-capture.ts` — records mouse points at ~30fps during drag, runs Ramer-Douglas-Peucker simplification (tolerance 3px), normalizes to composition coordinates accounting for preview scale factor.
+- `src/inspector/PathPreview.tsx` — SVG overlay rendering the drawn path as a dashed polyline, fades out 2s after mouseup.
+- Agent context receives the simplified path as structured data: `{ type: "motion_path", elementId, points: [{x, y, frame}], compositionWidth, compositionHeight }`.
+- System prompt section instructs agent to translate path keypoints into `interpolate()` calls mapping x/y to `translateX`/`translateY`.

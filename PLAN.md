@@ -261,22 +261,26 @@ Depends on Phase A. Style Extractor, User Profile, and System Prompt Injection e
 
 ---
 
-## Phase D: Proactive Intelligence + Ghost Tracks (1-2 weeks)
+## Phase D: Proactive Intelligence + Ghost Tracks (1 week)
 Depends on Phases A + B + C.
 
-`[ ]` Tasks to be detailed when Phase C is complete.
+`[x]` **D.1 Post-edit analyzer** — heuristic checks after every agent edit: missing interpolate clamp, spring overshoot (stiffness >200 + damping <20), text cutoff at sequence boundary, >3 sequences overlapping at current frame. Pure function, no Claude calls. (`src/agent/proactive/post-edit-analyzer.ts`)
 
-Key deliverables:
-- Post-edit analyzer, style checker, idle-time suggestions
-- Ghost track generator for timeline
-- Suggestion rendering in AgentChat with before/after frame captures
-- Ghost track rendering on TimelinePanel with inline accept/reject
+`[x]` **D.3 Idle-time suggestions** — fires after 10s of user inactivity: no exit animations, front-loaded timing, single file >150 lines. Returns at most 1 suggestion, randomized to avoid repetition. (`src/agent/proactive/idle-suggestions.ts`)
 
-See `Plans/agentic-transformation-plan.md` sections 7 and 7d.
+`[x]` **D.4 Wire to AgentChat** — add `proactiveSuggestions`, `setProactiveSuggestions`, `dismissSuggestion` to `agentSlice`. Render dismissible amber suggestion cards above chat input. "Apply" sends `applyInstruction` to `session.send()`. Limit display to 2 at a time. (`src/store.ts`, `src/editor/chat/AgentChat.tsx`, `src/editor/chat/useProactiveAnalysis.ts`)
+
+`[x]` **D.5 Ghost track generator (data layer)** — pure function: maps suggestions + temporalMap to `GhostTrack[]` (id, label, startFrame, endFrame, track lane, linked suggestion). No rendering yet — that ships in Phase E after timeline cleanup. (`src/agent/proactive/ghost-track-generator.ts`)
+
+`[x]` **D.7 Update PLAN.md and CHANGES.md**
+
+Note: D.2 (style checker) removed from scope — deferred to future style system (see `Plans/agentic-transformation-plan.md` section 17). D.6 (ghost track rendering in TimelinePanel) deferred to Phase E.
+
+See `Plans/agentic-transformation-plan.md` sections 7 and 17.
 
 ---
 
-## Phase E: UI Migration + Director Inputs + External Integration (3 weeks)
+## Phase E: UI Migration + Onboarding + Director Inputs + External Integration (2-3 weeks)
 Depends on Phases A + B.
 
 `[ ]` Tasks to be detailed when Phase D is complete.
@@ -284,13 +288,19 @@ Depends on Phases A + B.
 Key deliverables:
 - Remove feature flag, AgentChat becomes default
 - Remove old CommandPalette and GenerateChat
-- Spatial directives: draw motion paths on overlay
-- Voice-to-action: spacebar-hold-to-talk with frame context
-- Asset sourcing: fetch_external_asset tool + server route
-- Reference image analysis via Claude vision
-- Flexible model registry
+- Final EditorLayout: [FileTree] [Preview+Timeline] [AgentChat]
+- Empty state with starter prompts in AgentChat (clickable examples when no history)
+- Composition templates panel in FileTree (loads from src/samples/)
+- Reference image upload in chat — image attached as Claude vision content block
+- Voice-to-action: spacebar-hold-to-talk, transcript lands in input for review before send (no auto-send)
+- Asset sourcing: fetch_external_asset tool + POST /api/fetch-asset server route
+- Flexible model registry (src/agent/models.ts), model selector in Settings
+- **Ghost track rendering in TimelinePanel** — deferred from Phase D, safe after layout cleanup
 
-See `Plans/agentic-transformation-plan.md` sections 10 and 11.
+Note: Spatial directives (draw-to-animate) removed from scope — deferred to future features.
+See `Plans/agentic-transformation-plan.md` section 17b for design notes when revisiting.
+
+See `Plans/agentic-transformation-plan.md` sections 10, 11, 14, and 17.
 
 ---
 

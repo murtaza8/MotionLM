@@ -12,6 +12,57 @@ import type { AgentRequestMessage, SystemBlock, ToolDefinition } from "@/ai/clie
 const MAX_ITERATIONS = 25;
 
 // ---------------------------------------------------------------------------
+// validateMessages — ensure tool_use/tool_result pairing before each API call
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates that every assistant message with tool_use blocks is immediately
+ * followed by a user message containing matching tool_result blocks.
+ *
+ * If a violation is found, truncates the messages array to the last valid
+ * point and logs a warning. Returns the (possibly truncated) array.
+ */
+function validateMessages(
+  messages: AgentRequestMessage[]
+): AgentRequestMessage[] {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+
+    const toolUseIds = msg.content
+      .filter((b) => b.type === "tool_use")
+      .map((b) => (b as { id: string }).id);
+
+    if (toolUseIds.length === 0) continue;
+
+    // Must be followed by a user message with matching tool_results
+    const next = messages[i + 1];
+    if (!next || next.role !== "user") {
+      console.warn(
+        `[Agent] Truncating messages: assistant at index ${i} has tool_use but no tool_result follows. tool_use ids: ${toolUseIds.join(", ")}`
+      );
+      // Trim to before this broken assistant message
+      return messages.slice(0, i);
+    }
+
+    const resultIds = new Set(
+      next.content
+        .filter((b) => b.type === "tool_result")
+        .map((b) => (b as { tool_use_id: string }).tool_use_id)
+    );
+
+    const missingIds = toolUseIds.filter((id) => !resultIds.has(id));
+    if (missingIds.length > 0) {
+      console.warn(
+        `[Agent] Truncating messages: tool_result at index ${i + 1} missing ids: ${missingIds.join(", ")}`
+      );
+      return messages.slice(0, i);
+    }
+  }
+  return messages;
+}
+
+// ---------------------------------------------------------------------------
 // runAgent — async generator (tool-calling loop)
 // ---------------------------------------------------------------------------
 
@@ -59,6 +110,17 @@ export async function* runAgent(
     >();
     let stopReason: string | null = null;
     let usageEmitted = false;
+
+    // Validate conversation structure before every API call.
+    // If a prior turn left orphaned tool_use blocks (e.g. interrupted session,
+    // max_tokens cutoff, or persisted corrupted history), truncate to the last
+    // valid point so the API doesn't reject the whole request.
+    const validatedMessages = validateMessages(currentMessages);
+    if (validatedMessages.length !== currentMessages.length) {
+      // Replace the runner's working array with the truncated version.
+      currentMessages.length = 0;
+      currentMessages.push(...validatedMessages);
+    }
 
     for await (const event of sendAgentRequest(
       currentMessages,
@@ -131,10 +193,21 @@ export async function* runAgent(
       });
     }
 
+    // If stop_reason is not "tool_use", strip any tool_use blocks that were
+    // partially streamed (e.g. max_tokens cutoff, premature stream close).
+    // Storing them without matching tool_results corrupts the conversation
+    // for all subsequent API calls.
+    if (stopReason !== "tool_use" && orderedToolBlocks.length > 0) {
+      const textOnly = assistantContent.filter((b) => b.type !== "tool_use");
+      assistantContent.length = 0;
+      assistantContent.push(...textOnly);
+      orderedToolBlocks.length = 0;
+    }
+
     if (assistantContent.length > 0) {
       currentMessages.push({ role: "assistant", content: assistantContent });
       // Emit the complete assistant content so session.ts can persist it to
-      // conversation history (includes both text and tool_use blocks).
+      // conversation history (text blocks only if tool_use was stripped above).
       yield { type: "assistant_turn", content: assistantContent };
     }
 
@@ -149,8 +222,31 @@ export async function* runAgent(
 
     const toolResultContent: ToolResultContentBlock[] = [];
 
-    for (const [, block] of orderedToolBlocks) {
+    for (let toolIdx = 0; toolIdx < orderedToolBlocks.length; toolIdx++) {
+      const [, block] = orderedToolBlocks[toolIdx];
+
       if (signal?.aborted) {
+        // Yield error tool_results for all remaining tools so the
+        // assistant(tool_use) already in history stays paired.
+        for (let ri = toolIdx; ri < orderedToolBlocks.length; ri++) {
+          const [, rb] = orderedToolBlocks[ri];
+          toolResultContent.push({
+            type: "tool_result",
+            tool_use_id: rb.id,
+            content: [{ type: "text", text: "Aborted by user." }],
+            is_error: true,
+          });
+          yield {
+            type: "tool_call_result",
+            toolName: rb.name,
+            toolUseId: rb.id,
+            input: {},
+            result: "Aborted by user.",
+            isError: true,
+          };
+        }
+        yield { type: "tool_result_turn", content: toolResultContent };
+        currentMessages.push({ role: "user", content: toolResultContent });
         yield { type: "state_change", state: AgentState.PAUSED };
         return;
       }

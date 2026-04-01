@@ -10,6 +10,88 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## Stronger capture tool guardrails — agent was still calling capture on "hi" (2026-04-01)
+
+The initial Fix 2 softened the system prompt `<visual-grounding>` section but the agent still called `capture_sequence` on simple greetings. Two root causes:
+
+1. **Tool descriptions override system prompt**: The `description` field on `capture_frame` said "Call this after significant visual edits to verify the result" and `capture_sequence` said "Useful for inspecting animation timing across keyframes". These are sent in the `tools` API parameter and the model treats them as tool-level instructions. Updated both to explicitly say "Only call when the user explicitly asks" and "Do NOT call after edits".
+
+2. **System prompt too soft**: "use them sparingly" is ambiguous. Replaced with explicit NEVER list (don't capture to understand composition, after edits, on greetings, for simple changes) and made the tone directive rather than advisory.
+
+- Files: `src/ai/system-prompt.ts`, `src/agent/tools/capture-frame.ts`, `src/agent/tools/capture-sequence.ts`
+
+---
+
+## Phase D holistic review: 6 fixes for agent misbehavior, conversation corruption, and performance (2026-04-01)
+
+Comprehensive review of all Phase D additions. Three categories of issues addressed:
+
+**Fix 1 — Strip orphaned tool_use blocks in runner** (`src/agent/runner.ts`):
+When `stop_reason` is `max_tokens` or `end_turn` but partial `tool_use` blocks were streamed, they were stored without matching `tool_result`, corrupting conversation. Now strips `tool_use` blocks from `assistantContent` when `stopReason !== "tool_use"`. Also fixed abort mid-tool-execution: yields error `tool_result` blocks for ALL remaining tools before returning, keeping conversation paired.
+
+**Fix 2 — Soften visual-grounding in system prompt** (`src/ai/system-prompt.ts`):
+The `<visual-grounding>` section mandated `capture_frame` after every visual edit, causing the agent to obsessively screenshot and analyze frames instead of just editing code. Replaced with conservative guidance: only capture on explicit user request or complex layout verification. Toned down tool descriptions in `<capabilities>`.
+
+**Fix 3 — Capture tool error handling for 500s** (`src/agent/tools/capture-frame.ts`, `src/agent/tools/capture-sequence.ts`):
+Added `response.ok` check before `response.json()` in both tools. Previously a 500 with HTML body caused `json()` to throw, misleadingly reported as "render server unreachable".
+
+**Fix 4 — Optimize useProactiveAnalysis subscriptions** (`src/editor/chat/useProactiveAnalysis.ts`):
+Consolidated 3 `useStore` calls into 1 using `useShallow`. Changed idle timer dependency from `[agentState]` to derived `[isIdle]` boolean — prevents timer churn on every THINKING/TOOL_CALL/COMPLETE transition.
+
+**Fix 5 — Batch store updates in session.ts** (`src/agent/session.ts`):
+Replaced separate `removePendingToolCall` + `incrementIteration` calls with single `useStore.setState()`. Added outer `catch` block around `runAgent` generator. Fixed model name from deprecated `claude-sonnet-4-20250514` to `claude-sonnet-4-6`.
+
+**Fix 6 — Extract TokenBadge from AgentChat** (`src/editor/chat/AgentChat.tsx`):
+Extracted token display into isolated `TokenBadge` component with its own `useStore((s) => s.tokenUsage)` subscription. Consolidated remaining AgentChat subscriptions into single `useShallow` selector. Token usage updates no longer re-render the entire chat panel.
+
+---
+
+## Add validateMessages safety net in runner before each API call (2026-04-01)
+
+`runner.ts` now calls `validateMessages(currentMessages)` before every `sendAgentRequest` call. Walks the message array and checks that every assistant message with `tool_use` blocks is immediately followed by a user message with ALL matching `tool_result` blocks. If a violation is found, truncates to the last valid point and logs a warning. This catches corruption from interrupted sessions, max_tokens cutoffs, or any other source of mismatched tool_use/tool_result pairs — both from stored history AND from the runner's own loop.
+
+- Files: `src/agent/runner.ts`
+
+---
+
+## Fix tool_use/tool_result mismatch in persisted conversation history (2026-04-01)
+
+`trimTrailingUserMessages` was replaced with `trimToValidConversation` in `session.ts`. The old function only trimmed trailing user-role messages but left assistant messages that had `tool_use` blocks at the end — these require an immediately-following `tool_result` user message, so appending a new user instruction caused a 400 `invalid_request_error`.
+
+The new function walks backwards to find the last assistant message with NO `tool_use` blocks (a clean end_turn stop). This is the only valid cut point for appending a new user message. If no clean cut point exists (entire stored history is corrupted), returns `[]` so the caller falls back to a full-context first-turn message.
+
+- Files: `src/agent/session.ts`
+
+---
+
+## Fix invalid model name and improve 400 error logging (2026-04-01)
+
+`session.ts` was sending `claude-sonnet-4-20250514` — an invalid/deprecated model ID that the Anthropic API rejects with a 400 on every request. Updated to `claude-sonnet-4-6`.
+
+`client.ts` now reads the Anthropic error body on 400 responses and surfaces the specific validation message (e.g. "model not found") rather than the generic "API request failed (400)".
+
+- Files: `src/agent/session.ts`, `src/ai/client.ts`
+
+---
+
+## Phase D bug fixes: agent stops responding after first message (2026-04-01)
+
+Four bugs identified and fixed that caused the agent to stop responding after the first successful turn.
+
+**Root cause (session.ts):** When any `send()` failed before the API returned an assistant message, `conversationHistory` was left with an orphaned trailing user message. Every subsequent `send()` appended another user message, creating consecutive user-role messages. The Anthropic API rejects these with a 400, causing all subsequent turns to fail in a cascade.
+
+Fix: `trimTrailingUserMessages()` helper trims history to the last assistant message before each API call. Uses `buildAgentUserMessage` (full context) instead of `buildFollowUpUserMessage` when trimmed history is empty, so Claude always has file content on the first effective turn. Removed now-redundant `isFirstTurn` field.
+
+**Bug 2 (session.ts):** No `catch` block around the `runAgent` async generator — if the generator threw (e.g. network drop mid-stream), `agentState` stayed at THINKING permanently, locking the UI. Fixed with `catch` → `setAgentState(ERROR)`.
+
+**Bug 3 (store.ts):** `resetSession()` did not clear `proactiveSuggestions`, so stale suggestions bled into new sessions. Fixed by adding `proactiveSuggestions: []` to the reset.
+
+**Bug 4 (useProactiveAnalysis.ts):** `useStore(...)` hooks called inside a `useEffect` dependency array — invalid React hooks usage, creating extra subscriptions and unexpected render cycles. Fixed by moving to named top-level constants.
+
+- Files: `src/agent/session.ts`, `src/store.ts`, `src/editor/chat/useProactiveAnalysis.ts`
+
+---
+
 ## Agent edits now create history snapshots (2026-04-01)
 
 `edit_file` and `create_file` tools now call `store.pushSnapshot()` after every successful compilation and store commit. Previously, agent edits updated the preview but never appeared in the History panel ("No history yet" was shown even after a successful edit).
@@ -103,6 +185,48 @@ When you make a change that is not part of a PLAN.md task, append an entry here:
 ---
 
 <!-- Add new entries below this line, newest first -->
+
+## 2026-04-01 — Phase D code review: three bugs fixed
+
+**1. `useStore` hooks called inside `useEffect` dependency array** (`src/editor/chat/useProactiveAnalysis.ts`)
+The second `useEffect` in `useProactiveAnalysis` called `useStore((s) => s.activeFilePath)` and `useStore((s) => s.conversationHistory).length` inline inside the deps array literal. While React processes these as consistent hook calls (args evaluated before the `useEffect` call), this non-idiomatic pattern creates extra subscriptions on every render and can trigger unexpected render cycles during `session.send()` in React 19, causing the agent to appear unresponsive. Fix: moved both subscriptions to named top-level constants (`activeFilePath`, `conversationHistoryLength`) and used them as plain values in the deps array.
+
+**2. `session.send()` has no catch block** (`src/agent/session.ts`)
+The `for await (const action of runAgent(...))` loop had a `finally` but no `catch`. If the async generator threw (e.g. network drop mid-SSE stream causing `reader.read()` to reject), the exception propagated through to `handleSend` which discards it via `void`. `agentState` would remain stuck at `THINKING` permanently, disabling the send button and requiring a page reload. Fix: added a `catch` block that calls `setAgentState(AgentState.ERROR)` so the UI recovers and the user can retry.
+
+**3. `resetSession` did not clear `proactiveSuggestions`** (`src/store.ts`)
+Starting a new session (toolbar "New" button) called `AgentSession.create()` → `resetSession()`, which cleared conversation history and token usage but left `proactiveSuggestions` untouched. Suggestions from the previous session remained visible in the new session's chat panel. Fix: added `proactiveSuggestions: []` to the `resetSession` setter.
+
+## 2026-04-01 — Phase D: Proactive Intelligence + Ghost Tracks
+
+Post-edit heuristic analysis, idle-time suggestions, dismissible suggestion cards in AgentChat, and ghost track data layer.
+
+**Post-edit analyzer** (`src/agent/proactive/post-edit-analyzer.ts`):
+- Pure function `analyzeAfterEdit(code, temporalMap, currentFrame): EditSuggestion[]`
+- Four independent try/catch checks: missing `interpolate()` extrapolation clamp, spring oscillation risk (stiffness >200 + damping <20), Sequence ending within 5 frames of composition end, >3 sequences overlapping at current frame.
+- IDs generated with `crypto.randomUUID()`. No Claude calls.
+
+**Idle-time suggestions** (`src/agent/proactive/idle-suggestions.ts`):
+- Pure function `analyzeForIdleSuggestions(temporalMap, currentCode, durationInFrames): EditSuggestion[]`
+- Returns at most 1 suggestion per call, cycling through 3 checks via `(Date.now() / 30000 | 0) % 3`.
+- Checks: no exit animations (opacity → 0 in last 20%), front-loaded timing (all sequences start in first 30%), single file >150 lines.
+- Re-exports `EditSuggestion` so callers import from either module.
+
+**Store additions** (`src/store.ts`):
+- `agentSlice` gains `proactiveSuggestions: EditSuggestion[]`, `setProactiveSuggestions`, `dismissSuggestion` (filters by id). All updates in single `set()` call.
+
+**useProactiveAnalysis hook** (`src/editor/chat/useProactiveAnalysis.ts`):
+- Called inside `AgentChat`. No return value.
+- Fires `analyzeAfterEdit` on every `COMPLETE` agentState transition; deduplicates by type, merges with existing suggestions, caps store at 4.
+- Fires `analyzeForIdleSuggestions` via 10s `setTimeout` when `agentState === IDLE`; resets timer on `activeFilePath` or `conversationHistory` changes. Skips single-file suggestion when `files.size > 1`.
+
+**Suggestion cards in AgentChat** (`src/editor/chat/AgentChat.tsx`):
+- Amber-tinted dismissible cards (`bg-amber-950/40 border-amber-700/50`) rendered above the input area.
+- Displays first 2 suggestions from `proactiveSuggestions`. "Apply" calls `session.send(applyInstruction)` + `dismissSuggestion`. "×" calls `dismissSuggestion`.
+
+**Ghost track generator** (`src/agent/proactive/ghost-track-generator.ts`):
+- Pure function `generateGhostTracks(suggestions, temporalMap, durationInFrames): GhostTrack[]`
+- Produces ghost tracks for: `idle` no-exit-animation suggestions (one per top-level sequence node, covering last 20%), `overlap` suggestions (±5 frame window around current frame), `text-cutoff` suggestions (from frame to end). Skips `animation-clamp` and `spring-oscillation` (no spatial meaning). Stable ids: `ghost-${suggestion.id}-${index}`. Timeline rendering deferred to Phase E.
 
 ## 2026-04-01 — Phase C code review: four bugs fixed
 

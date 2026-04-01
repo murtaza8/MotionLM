@@ -22,6 +22,39 @@ import type { AgentStoreSnapshot } from "./context";
 import type { CacheManagerState } from "./cache-manager";
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns history trimmed to the last "clean" assistant message — one that
+ * has NO tool_use blocks (i.e., a text-only final response with stop_reason
+ * "end_turn"). This is the only safe cut point for appending a new user
+ * message:
+ *
+ * - Any assistant message with tool_use blocks requires a user(tool_result)
+ *   message to follow it immediately. Cutting there and appending a new user
+ *   instruction instead produces an `invalid_request_error` 400.
+ * - Trailing orphaned user messages (failed sends) are also dropped, since
+ *   consecutive user messages are equally invalid.
+ *
+ * If no clean cut point exists (entire history is corrupted), returns []
+ * so the caller falls back to a full-context first-turn message.
+ */
+function trimToValidConversation(history: AgentMessage[]): AgentMessage[] {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role !== "assistant") continue;
+    const hasToolUse = history[i].content.some((b) => b.type === "tool_use");
+    if (!hasToolUse) {
+      // Clean end_turn response — safe to append a new user message here.
+      return history.slice(0, i + 1);
+    }
+    // This assistant message has tool_use blocks — cutting here would leave
+    // them unmatched. Keep searching backwards for an earlier clean stop.
+  }
+  return [];
+}
+
+// ---------------------------------------------------------------------------
 // AgentSession
 // ---------------------------------------------------------------------------
 
@@ -35,7 +68,6 @@ import type { CacheManagerState } from "./cache-manager";
 export class AgentSession {
   private abortController: AbortController | null = null;
   private cacheState: CacheManagerState = initialCacheManagerState();
-  private isFirstTurn = true;
   private readonly toolsWithCache = buildToolsWithCacheControl(ALL_TOOLS);
 
   // ---------------------------------------------------------------------------
@@ -55,7 +87,6 @@ export class AgentSession {
    */
   static resume(): AgentSession {
     const session = new AgentSession();
-    session.isFirstTurn = false;
     // Reset only transient per-session state, leave history + sessionId intact.
     useStore.setState({
       agentState: AgentState.IDLE,
@@ -95,7 +126,7 @@ export class AgentSession {
     const model =
       modelPreference === "opus"
         ? "claude-opus-4-6"
-        : "claude-sonnet-4-20250514";
+        : "claude-sonnet-4-6";
 
     // Build snapshot once — avoid stale reads mid-async
     const snapshot: AgentStoreSnapshot = {
@@ -106,8 +137,16 @@ export class AgentSession {
       temporalMap: store.temporalMap,
     };
 
-    // Build user message — full context on first turn, lightweight follow-ups
-    const userMessage: AgentMessage = this.isFirstTurn
+    // Trim orphaned trailing user messages from any prior failed send.
+    // Consecutive user messages cause a 400 from the Anthropic API and corrupt
+    // all subsequent turns. Trimming to the last assistant message restores a
+    // valid alternating structure before appending the new user message.
+    const trimmedHistory = trimToValidConversation(conversationHistory);
+    const hasSuccessfulHistory = trimmedHistory.length > 0;
+
+    // Use full context when there is no prior successful assistant turn so
+    // Claude always receives file content, even on retry after a failed first send.
+    const userMessage: AgentMessage = !hasSuccessfulHistory
       ? buildAgentUserMessage(snapshot, userText)
       : buildFollowUpUserMessage(snapshot, userText);
 
@@ -124,10 +163,7 @@ export class AgentSession {
     }
 
     // Apply cache control breakpoints
-    const allMessages: AgentMessage[] = [
-      ...conversationHistory,
-      userMessage,
-    ];
+    const allMessages: AgentMessage[] = [...trimmedHistory, userMessage];
     const { messages: cachedMessages, system: cachedSystem } =
       applyCacheControl(allMessages, systemBlocks);
 
@@ -163,8 +199,13 @@ export class AgentSession {
             break;
 
           case "tool_call_result": {
-            s.removePendingToolCall(action.toolUseId);
-            s.incrementIteration();
+            // Batch remove + increment into a single set() to avoid two re-renders.
+            useStore.setState((prev) => ({
+              pendingToolCalls: prev.pendingToolCalls.filter(
+                (id) => id !== action.toolUseId
+              ),
+              iterationCount: prev.iterationCount + 1,
+            }));
             // Only count real edits toward the profile cache update interval.
             // The think tool is zero-cost and should not advance the counter.
             if (action.toolName !== "think") {
@@ -227,11 +268,13 @@ export class AgentSession {
             break;
         }
       }
+    } catch {
+      // Unhandled exception from the generator (e.g. network drop mid-stream).
+      // Recover agentState so the UI unlocks and the user can retry.
+      useStore.getState().setAgentState(AgentState.ERROR);
     } finally {
       this.abortController = null;
     }
-
-    this.isFirstTurn = false;
   }
 
   // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { parseTemporalMap } from "@/engine/temporal/parser";
 import type { TemporalMap } from "@/engine/temporal/types";
 import { AgentState } from "@/agent/types";
 import type { AgentMessage, TokenUsage } from "@/agent/types";
+import type { EditSuggestion } from "@/agent/proactive/post-edit-analyzer";
 
 // ---------------------------------------------------------------------------
 // VFS types
@@ -442,6 +443,7 @@ interface AgentSlice {
   iterationCount: number;
   thinkLog: string[];
   useAgentChat: boolean;
+  proactiveSuggestions: EditSuggestion[];
   setAgentState: (state: AgentState) => void;
   appendMessage: (message: AgentMessage) => void;
   setConversationHistory: (messages: AgentMessage[]) => void;
@@ -453,6 +455,8 @@ interface AgentSlice {
   setActiveSessionId: (id: string | null) => void;
   addPendingToolCall: (toolUseId: string) => void;
   removePendingToolCall: (toolUseId: string) => void;
+  setProactiveSuggestions: (suggestions: EditSuggestion[]) => void;
+  dismissSuggestion: (id: string) => void;
 }
 
 const createAgentSlice = (
@@ -466,6 +470,7 @@ const createAgentSlice = (
   iterationCount: 0,
   thinkLog: [],
   useAgentChat: false,
+  proactiveSuggestions: [],
 
   setAgentState: (state) => set(() => ({ agentState: state })),
 
@@ -489,6 +494,7 @@ const createAgentSlice = (
       tokenUsage: { input: 0, output: 0, cached: 0 },
       iterationCount: 0,
       thinkLog: [],
+      proactiveSuggestions: [],
     })),
 
   appendThinkLog: (thought) =>
@@ -505,6 +511,14 @@ const createAgentSlice = (
   removePendingToolCall: (toolUseId) =>
     set((s) => ({
       pendingToolCalls: s.pendingToolCalls.filter((id) => id !== toolUseId),
+    })),
+
+  setProactiveSuggestions: (suggestions) =>
+    set(() => ({ proactiveSuggestions: suggestions })),
+
+  dismissSuggestion: (id) =>
+    set((s) => ({
+      proactiveSuggestions: s.proactiveSuggestions.filter((sg) => sg.id !== id),
     })),
 });
 

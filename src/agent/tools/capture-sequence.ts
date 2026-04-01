@@ -28,6 +28,7 @@ async function fetchStill(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ files, entryPath, compositionId, frame }),
     });
+    if (!response.ok) return null;
     const json = (await response.json()) as { ok: boolean; data?: string };
     return json.ok && json.data ? json.data : null;
   } catch {
@@ -51,7 +52,7 @@ async function base64ToImageBitmap(base64: string): Promise<ImageBitmap> {
 export const captureSequenceTool: AgentTool = {
   name: "capture_sequence",
   description:
-    "Render multiple frames of the composition as a 2x2 filmstrip image. Useful for inspecting animation timing across keyframes — for example, capture frames 0, 30, 60, 90 to see the full arc of an animation. Maximum 4 frames.",
+    "Render multiple frames as a 2x2 filmstrip image. Only call this when the user explicitly asks to preview animation timing or see multiple frames. Do NOT call proactively — the user sees the live preview. Maximum 4 frames.",
   input_schema: {
     type: "object",
     properties: {

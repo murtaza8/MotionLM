@@ -11,7 +11,7 @@ const InputSchema = z.object({
 export const captureFrameTool: AgentTool = {
   name: "capture_frame",
   description:
-    "Render a still image of the composition at a specific frame number. Returns a PNG image so you can visually inspect what you created or edited. Call this after significant visual edits to verify the result. Defaults to the current playhead frame if no frame is specified.",
+    "Render a still image of the composition at a specific frame number. Returns a PNG image. Only call this when the user explicitly asks to see or preview the result. Do NOT call after edits — the user already sees the live preview. Defaults to the current playhead frame if no frame is specified.",
   input_schema: {
     type: "object",
     properties: {
@@ -56,12 +56,27 @@ export const captureFrameTool: AgentTool = {
         }),
       });
 
-      const json = (await response.json()) as { ok: boolean; data?: string; error?: string };
+      if (!response.ok) {
+        return {
+          type: "text",
+          text: `Frame capture failed: render server returned ${response.status}. Continue reasoning from code.`,
+        };
+      }
+
+      let json: { ok: boolean; data?: string; error?: string };
+      try {
+        json = (await response.json()) as typeof json;
+      } catch {
+        return {
+          type: "text",
+          text: "Frame capture failed: render server returned invalid response. Continue reasoning from code.",
+        };
+      }
 
       if (!json.ok || !json.data) {
         return {
           type: "text",
-          text: `Frame capture failed: ${json.error ?? "Unknown render error"}`,
+          text: `Frame capture failed: ${json.error ?? "Unknown render error"}. Continue reasoning from code.`,
         };
       }
 

@@ -440,7 +440,18 @@ export async function* sendAgentRequest(
   }
 
   if (!response.ok) {
-    yield { type: "error", error: mapHttpError(response.status) };
+    let errorMessage = mapHttpError(response.status);
+    try {
+      const body = await response.json() as { error?: { message?: string; type?: string } };
+      // Log full error body to console so it's visible in devtools
+      console.error("[Claude API] Error response:", response.status, body);
+      if (body?.error?.message) {
+        errorMessage = `${response.status}: ${body.error.message}`;
+      }
+    } catch {
+      console.error("[Claude API] Error status:", response.status);
+    }
+    yield { type: "error", error: errorMessage };
     return;
   }
 

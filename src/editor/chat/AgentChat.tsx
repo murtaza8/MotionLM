@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, Square, Coins, Clock } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
+import { useShallow } from "zustand/react/shallow";
 
 import { useStore } from "@/store";
 import { AgentState } from "@/agent/types";
@@ -10,6 +11,7 @@ import { listConversations, loadConversation } from "@/persistence/idb";
 import { MessageList } from "./MessageList";
 import { ContextPill } from "./ContextPill";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { useProactiveAnalysis } from "./useProactiveAnalysis";
 
 // ---------------------------------------------------------------------------
 // Module-level session reference
@@ -49,10 +51,45 @@ interface SessionSummary {
  * - Thinking indicator (visible during agent execution)
  * - Input area with context pill and send/abort button
  */
-export const AgentChat = () => {
-  const agentState = useStore((s) => s.agentState);
+// ---------------------------------------------------------------------------
+// TokenBadge — isolated component so token usage updates don't re-render
+// the entire AgentChat tree.
+// ---------------------------------------------------------------------------
+
+const TokenBadge = () => {
   const tokenUsage = useStore((s) => s.tokenUsage);
-  const apiKey = useStore((s) => s.apiKey);
+  const totalTokens = tokenUsage.input + tokenUsage.output;
+
+  if (totalTokens === 0) return null;
+  return (
+    <span className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] font-mono">
+      <Coins className="w-3 h-3" />
+      {formatTokenCount(totalTokens)}
+      {tokenUsage.cached > 0 && (
+        <span className="text-emerald-400">
+          ({formatTokenCount(tokenUsage.cached)} cached)
+        </span>
+      )}
+    </span>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// AgentChat
+// ---------------------------------------------------------------------------
+
+export const AgentChat = () => {
+  const { agentState, apiKey, proactiveSuggestions, dismissSuggestion } =
+    useStore(
+      useShallow((s) => ({
+        agentState: s.agentState,
+        apiKey: s.apiKey,
+        proactiveSuggestions: s.proactiveSuggestions,
+        dismissSuggestion: s.dismissSuggestion,
+      }))
+    );
+
+  useProactiveAnalysis();
 
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -137,8 +174,6 @@ export const AgentChat = () => {
     []
   );
 
-  const totalTokens = tokenUsage.input + tokenUsage.output;
-
   return (
     <div className="flex flex-col h-full glass-panel border-l border-[var(--glass-border-subtle)]">
       {/* Header */}
@@ -151,17 +186,7 @@ export const AgentChat = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {totalTokens > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] font-mono">
-              <Coins className="w-3 h-3" />
-              {formatTokenCount(totalTokens)}
-              {tokenUsage.cached > 0 && (
-                <span className="text-emerald-400">
-                  ({formatTokenCount(tokenUsage.cached)} cached)
-                </span>
-              )}
-            </span>
-          )}
+          <TokenBadge />
 
           {/* Session history popover */}
           <Popover.Root
@@ -268,6 +293,43 @@ export const AgentChat = () => {
       {apiKey !== null && (
         <div className="shrink-0 px-3">
           <ThinkingIndicator />
+        </div>
+      )}
+
+      {/* Proactive suggestion cards */}
+      {apiKey !== null && proactiveSuggestions.length > 0 && (
+        <div className="shrink-0 px-2 pb-1 flex flex-col gap-1.5">
+          {proactiveSuggestions.slice(0, 2).map((suggestion) => (
+            <div
+              key={suggestion.id}
+              className="rounded-lg bg-amber-950/40 border border-amber-700/50 px-2.5 py-2 flex flex-col gap-1.5"
+            >
+              <p className="text-xs text-amber-200 leading-snug">
+                {suggestion.message}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const session = getOrCreateSession();
+                    void session.send(suggestion.applyInstruction);
+                    dismissSuggestion(suggestion.id);
+                  }}
+                  className="text-[10px] font-medium px-2 py-0.5 rounded bg-amber-700/60 text-amber-100 hover:bg-amber-700/80 transition-colors"
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissSuggestion(suggestion.id)}
+                  className="text-[10px] text-amber-400/70 hover:text-amber-300 ml-auto"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
