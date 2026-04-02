@@ -45,9 +45,10 @@ export const createFileTool: AgentTool = {
     });
     fileMap.set(path, code);
 
-    // Compile to validate before committing to VFS
-    const entryPath = store.activeFilePath ?? path;
-    const result = compileWithVFS(entryPath, fileMap);
+    // Compile to validate before committing to VFS.
+    // Always use the new file's own path as the entry point — not the current
+    // active file — so that compilation errors refer to the file being created.
+    const result = compileWithVFS(path, fileMap);
 
     if (!result.ok) {
       return {
@@ -57,6 +58,7 @@ export const createFileTool: AgentTool = {
     }
 
     store.createFile(path, code);
+    store.setActiveFile(path);
     store.pushSnapshot(`Agent created ${path}`);
     return { type: "text", text: `Created ${path}.` };
   },

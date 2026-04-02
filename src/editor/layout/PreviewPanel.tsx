@@ -30,6 +30,17 @@ export const PreviewPanel = () => {
   const setCurrentFrame = useStore((s) => s.setCurrentFrame);
   const durationInFrames = useStore((s) => s.durationInFrames);
   const activeFilePath = useStore((s) => s.activeFilePath);
+  const activeFileStatus = useStore((s) =>
+    s.activeFilePath ? s.files.get(s.activeFilePath)?.compilationStatus ?? "idle" : "idle"
+  );
+  const activeFileError = useStore((s) =>
+    s.activeFilePath ? s.files.get(s.activeFilePath)?.compilationError ?? null : null
+  );
+  const activeFileCode = useStore((s) => {
+    if (!s.activeFilePath) return "";
+    const f = s.files.get(s.activeFilePath);
+    return f ? (f.draftCode ?? f.activeCode) : "";
+  });
   const editMode = useStore((s) => s.editMode);
 
   // A stable string key that changes when any file's content changes,
@@ -175,8 +186,16 @@ export const PreviewPanel = () => {
       className="flex h-full w-full items-center justify-center overflow-hidden p-4"
     >
       {!component || !hasSize ? (
-        <span className="text-sm text-[var(--text-tertiary)]">
-          {!component ? "Compiling..." : ""}
+        <span className="text-sm text-[var(--text-tertiary)] text-center px-4">
+          {activeFileStatus === "compiling"
+            ? "Compiling..."
+            : activeFileStatus === "error" && !activeFileCode.trim()
+            ? "File is empty — describe what to build in the chat."
+            : activeFileStatus === "error" && activeFileError
+            ? activeFileError
+            : !hasSize
+            ? ""
+            : "Compiling..."}
         </span>
       ) : (
         // playerContainerRef is sized to exactly the computed Player dimensions.

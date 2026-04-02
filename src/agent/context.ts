@@ -1,6 +1,7 @@
 import { buildFrameNarrative } from "@/ai/context-assembler";
 
 import type { TemporalNode } from "@/engine/temporal/types";
+import type { VFSFile } from "@/store";
 import type { AgentMessage, TextContentBlock } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -8,7 +9,7 @@ import type { AgentMessage, TextContentBlock } from "./types";
 // ---------------------------------------------------------------------------
 
 export interface AgentStoreSnapshot {
-  files: Map<string, { activeCode: string }>;
+  files: Map<string, Pick<VFSFile, "activeCode" | "compilationStatus" | "compilationError">>;
   activeFilePath: string | null;
   selectedElementId: string | null;
   selectedFrame: number | null;
@@ -17,6 +18,29 @@ export interface AgentStoreSnapshot {
     compositionDuration: number;
     fps: number;
   } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns an XML attribute string describing a file's compilation state.
+ * Empty files get status="empty". Error files get status="error" with the
+ * error message. Successful files get status="ok". Idle/compiling omitted.
+ */
+function fileStatusAttr(
+  file: Pick<VFSFile, "activeCode" | "compilationStatus" | "compilationError">
+): string {
+  if (!file.activeCode.trim()) return ' status="empty"';
+  if (file.compilationStatus === "error") {
+    const msg = file.compilationError ?? "unknown error";
+    // Escape double-quotes so the attribute is valid XML
+    const escaped = msg.replace(/"/g, "&quot;");
+    return ` status="error" error="${escaped}"`;
+  }
+  if (file.compilationStatus === "success") return ' status="ok"';
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -44,17 +68,19 @@ export function buildAgentUserMessage(
 
     if (store.files.size === 1) {
       const [path, file] = [...store.files.entries()][0];
+      const statusAttr = fileStatusAttr(file);
       blocks.push({
         type: "text",
-        text: `<source-file path="${path}">\n${file.activeCode}\n</source-file>`,
+        text: `<source-file path="${path}"${statusAttr}>\n${file.activeCode}\n</source-file>`,
       });
     } else {
       // Multiple files: include all, highlight the active one
       const fileParts: string[] = [];
       store.files.forEach((file, path) => {
         const isActive = path === activeFilePath ? " active=\"true\"" : "";
+        const statusAttr = fileStatusAttr(file);
         fileParts.push(
-          `<file path="${path}"${isActive}>\n${file.activeCode}\n</file>`
+          `<file path="${path}"${isActive}${statusAttr}>\n${file.activeCode}\n</file>`
         );
       });
       blocks.push({

@@ -202,6 +202,7 @@ If capture returns an error, continue reasoning from source code. Do not retry.
 8. Do not import anything not already in the file unless the instruction requires a new feature.
 9. Keep the component hierarchy intact — do not restructure unless asked.
 10. Export a single named composition component. Do not include registerRoot or Composition boilerplate.
+11. Default to editing the active file (marked active="true" in <virtual-file-system>, or the single <source-file>). Only call create_file when the user explicitly asks to create a new file or when the task clearly requires a separate module. An empty active file (status="empty") is an invitation to fill it — do not create a separate file instead.
 </editing-rules>`,
     },
     {

@@ -5,22 +5,22 @@ import * as Popover from "@radix-ui/react-popover";
 import { useStore } from "@/store";
 import { openFileFromDisk, saveFileToDisk } from "@/persistence/filesystem";
 
-import simpleTextSrc from "@/samples/simple-text.tsx?raw";
-import multiSequenceSrc from "@/samples/multi-sequence.tsx?raw";
-import springAnimationSrc from "@/samples/spring-animation.tsx?raw";
-import nestedComponentsSrc from "@/samples/nested-components.tsx?raw";
-import complexTimelineSrc from "@/samples/complex-timeline.tsx?raw";
+import { SIMPLE_TEXT_SOURCE } from "@/samples/simple-text";
+import { MULTI_SEQUENCE_SOURCE } from "@/samples/multi-sequence";
+import { SPRING_ANIMATION_SOURCE } from "@/samples/spring-animation";
+import { NESTED_COMPONENTS_SOURCE } from "@/samples/nested-components";
+import { COMPLEX_TIMELINE_SOURCE } from "@/samples/complex-timeline";
 
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
 
 const TEMPLATES: ReadonlyArray<{ id: string; label: string; filename: string; source: string }> = [
-  { id: "simple-text", label: "Simple Text Animation", filename: "simple-text.tsx", source: simpleTextSrc },
-  { id: "multi-sequence", label: "Multi-Sequence Layout", filename: "multi-sequence.tsx", source: multiSequenceSrc },
-  { id: "spring-animation", label: "Spring Animation", filename: "spring-animation.tsx", source: springAnimationSrc },
-  { id: "nested-components", label: "Nested Components", filename: "nested-components.tsx", source: nestedComponentsSrc },
-  { id: "complex-timeline", label: "Complex Timeline", filename: "complex-timeline.tsx", source: complexTimelineSrc },
+  { id: "simple-text", label: "Simple Text Animation", filename: "simple-text.tsx", source: SIMPLE_TEXT_SOURCE },
+  { id: "multi-sequence", label: "Multi-Sequence Layout", filename: "multi-sequence.tsx", source: MULTI_SEQUENCE_SOURCE },
+  { id: "spring-animation", label: "Spring Animation", filename: "spring-animation.tsx", source: SPRING_ANIMATION_SOURCE },
+  { id: "nested-components", label: "Nested Components", filename: "nested-components.tsx", source: NESTED_COMPONENTS_SOURCE },
+  { id: "complex-timeline", label: "Complex Timeline", filename: "complex-timeline.tsx", source: COMPLEX_TIMELINE_SOURCE },
 ];
 
 // ---------------------------------------------------------------------------

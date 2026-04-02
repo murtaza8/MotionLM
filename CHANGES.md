@@ -10,6 +10,35 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## Agent awareness improvements: active-file rule, status context, entry-path fix (2026-04-02)
+
+**Files:** `src/agent/tools/create-file.ts`, `src/ai/system-prompt.ts`, `src/agent/context.ts`
+
+**create-file.ts** — `create_file` tool now always uses the new file's own path as the compilation entry point (previously used `store.activeFilePath ?? path`, causing misleading errors like "Babel transform of /test4.tsx produced no output" when creating a different file). After successful compilation the new file is automatically set as active.
+
+**system-prompt.ts** — Added editing rule 11: agent defaults to editing the active file and only calls `create_file` when the user explicitly requests a new file or when the task clearly requires a separate module. Empty active files (status="empty") are treated as an invitation to fill, not create a new file.
+
+**context.ts** — `AgentStoreSnapshot.files` now includes `compilationStatus` and `compilationError` per file. A new `fileStatusAttr()` helper annotates each `<file>` and `<source-file>` tag with `status="empty"`, `status="error" error="..."`, or `status="ok"` so the agent immediately knows which files are empty or broken before calling any tools.
+
+---
+
+## Fix: PreviewPanel shows correct state for empty/error files (2026-04-02)
+
+**What now exists** (`src/editor/layout/PreviewPanel.tsx`):
+PreviewPanel reads `compilationStatus`, `compilationError`, and the active source from the store. Instead of always showing "Compiling..." when there is no component, it now shows:
+- "Compiling..." — while a compile is in-flight
+- "File is empty — describe what to build in the chat." — when the file has no code
+- The actual compilation error message — when code exists but fails to compile
+
+---
+
+## Fix: template loading broken by ?raw imports (2026-04-02)
+
+**What now exists** (`src/editor/layout/FileTreePanel.tsx`):
+Templates are loaded by importing the `*_SOURCE` string constants from each sample module (e.g. `SPRING_ANIMATION_SOURCE` from `@/samples/spring-animation`). Previously the file used `?raw` imports, which loaded the entire TypeScript wrapper file verbatim — a string like `export const SPRING_ANIMATION_SOURCE = \`...\`` — which contains no React component and fails compilation. Now templates and new files from the template picker compile and render correctly.
+
+---
+
 ## Phase E code review: 7 bugs fixed (2026-04-01)
 
 **Bug 1 — Image media_type union too narrow** (`src/agent/types.ts`, `src/ai/client.ts`, `src/agent/session.ts`):
