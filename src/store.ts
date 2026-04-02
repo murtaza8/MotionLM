@@ -8,6 +8,16 @@ import type { AgentMessage, TokenUsage } from "@/agent/types";
 import type { EditSuggestion } from "@/agent/proactive/post-edit-analyzer";
 
 // ---------------------------------------------------------------------------
+// VFS constants
+// ---------------------------------------------------------------------------
+
+export const VFS_MAX_FILES = 30;
+export const VFS_SOFT_SIZE_LIMIT = 5 * 1024 * 1024; // 5 MB in characters
+
+export const selectTotalCodeSize = (files: Map<string, VFSFile>): number =>
+  [...files.values()].reduce((sum, f) => sum + f.activeCode.length, 0);
+
+// ---------------------------------------------------------------------------
 // VFS types
 // ---------------------------------------------------------------------------
 
@@ -37,6 +47,7 @@ interface VFSSlice {
   ) => void;
   setActiveFile: (path: string) => void;
   createFile: (path: string, code: string) => void;
+  deleteFile: (path: string) => void;
   setFileHandle: (path: string, handle: FileSystemFileHandle) => void;
   clearFileHandle: (path: string) => void;
 }
@@ -141,6 +152,7 @@ const createVFSSlice = (
   createFile: (path, code) =>
     set((state) => {
       if (state.files.has(path)) return {};
+      if (state.files.size >= VFS_MAX_FILES) return {};
       const updated = new Map(state.files);
       updated.set(path, {
         activeCode: code,
@@ -149,6 +161,18 @@ const createVFSSlice = (
         compilationError: null,
       });
       return { files: updated };
+    }),
+
+  deleteFile: (path) =>
+    set((state) => {
+      if (!state.files.has(path)) return {};
+      const updated = new Map(state.files);
+      updated.delete(path);
+      const nextActive =
+        state.activeFilePath === path
+          ? (updated.keys().next().value ?? null)
+          : state.activeFilePath;
+      return { files: updated, activeFilePath: nextActive };
     }),
 
   setFileHandle: (path, handle) =>

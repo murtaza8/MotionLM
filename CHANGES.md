@@ -10,6 +10,16 @@ Read this at the start of every session alongside PLAN.md to get a complete pict
 
 ---
 
+## Delete file button + VFS file-count and size guardrails (2026-04-02)
+
+**Files:** `src/store.ts`, `src/editor/layout/FileTreePanel.tsx`
+
+**store.ts** — Added `VFS_MAX_FILES = 30` (hard cap) and `VFS_SOFT_SIZE_LIMIT = 5 MB` constants. `createFile` silently returns when `files.size >= VFS_MAX_FILES` (caller shows the alert). New `deleteFile(path)` action removes a file from the Map and switches `activeFilePath` to the first remaining file (or `null` if empty). New `selectTotalCodeSize` helper sums `activeCode.length` across all files — cross-browser, accurate for the in-memory VFS. `deleteFile: (path: string) => void` added to `VFSSlice` interface.
+
+**FileTreePanel.tsx** — Added `checkCanCreateFile()` guard called by New, Open, and template Load: shows `window.alert` at the hard file count limit, `window.confirm` soft warning at 5 MB total source size. Added `handleDeleteFile` handler with `window.confirm` confirmation. Added `Trash2` icon button to the toolbar (right of Save), red on hover, disabled when no file is active. Imported `Trash2` from `lucide-react` and the new constants/selector from `@/store`.
+
+---
+
 ## Agent awareness improvements: active-file rule, status context, entry-path fix (2026-04-02)
 
 **Files:** `src/agent/tools/create-file.ts`, `src/ai/system-prompt.ts`, `src/agent/context.ts`

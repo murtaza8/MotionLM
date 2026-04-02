@@ -1,8 +1,8 @@
 import { useState, useRef } from "react";
-import { BookOpen, FileCode2, FilePlus, Save, Upload } from "lucide-react";
+import { BookOpen, FileCode2, FilePlus, Save, Trash2, Upload } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 
-import { useStore } from "@/store";
+import { useStore, VFS_MAX_FILES, VFS_SOFT_SIZE_LIMIT, selectTotalCodeSize } from "@/store";
 import { openFileFromDisk, saveFileToDisk } from "@/persistence/filesystem";
 
 import { SIMPLE_TEXT_SOURCE } from "@/samples/simple-text";
@@ -32,12 +32,39 @@ export const FileTreePanel = () => {
   const activeFilePath = useStore((s) => s.activeFilePath);
   const setActiveFile = useStore((s) => s.setActiveFile);
   const createFile = useStore((s) => s.createFile);
+  const deleteFile = useStore((s) => s.deleteFile);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const fileEntries = Array.from(files.entries());
 
+  const checkCanCreateFile = (): boolean => {
+    if (files.size >= VFS_MAX_FILES) {
+      window.alert(
+        `File limit reached. You can have at most ${VFS_MAX_FILES} files open at once. Delete a file to create a new one.`
+      );
+      return false;
+    }
+    const totalSize = selectTotalCodeSize(files);
+    if (totalSize >= VFS_SOFT_SIZE_LIMIT) {
+      return window.confirm(
+        `Your workspace is using over 5 MB of source code. Adding more files may slow down the editor. Continue anyway?`
+      );
+    }
+    return true;
+  };
+
+  const handleDeleteFile = () => {
+    if (!activeFilePath) return;
+    const confirmed = window.confirm(
+      `Delete "${activeFilePath}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    deleteFile(activeFilePath);
+  };
+
   const handleNewFile = () => {
+    if (!checkCanCreateFile()) return;
     const input = window.prompt("File name (e.g. my-comp.tsx):");
     if (!input) return;
     const trimmed = input.trim();
@@ -48,6 +75,7 @@ export const FileTreePanel = () => {
   };
 
   const handleOpen = async () => {
+    if (!checkCanCreateFile()) return;
     const result = await openFileFromDisk();
     if (!result.ok) {
       // FSAA not supported — fall back to hidden file input
@@ -99,6 +127,8 @@ export const FileTreePanel = () => {
     if (files.has(path)) {
       const confirmed = window.confirm(`"${template.filename}" already exists. Overwrite?`);
       if (!confirmed) return;
+    } else if (!checkCanCreateFile()) {
+      return;
     }
     createFile(path, template.source);
     setActiveFile(path);
@@ -201,6 +231,14 @@ export const FileTreePanel = () => {
           title="Save active file (Cmd+S)"
         >
           <Save className="w-3.5 h-3.5 shrink-0" />
+        </button>
+        <button
+          onClick={handleDeleteFile}
+          disabled={!activeFilePath}
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-[var(--text-secondary)] hover:text-red-400 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Delete active file"
+        >
+          <Trash2 className="w-3.5 h-3.5 shrink-0" />
         </button>
         <input
           ref={fileInputRef}
