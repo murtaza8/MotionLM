@@ -1,18 +1,16 @@
-import { useEffect } from "react";
-import { Download, History, PanelLeft, PanelRight, PanelBottom, Settings, Sparkles } from "lucide-react";
+import { useEffect, type RefObject } from "react";
+import { Download, History, PanelLeft, PanelBottom, Settings } from "lucide-react";
 
 import { useStore } from "@/store";
 import { saveFileToDisk } from "@/persistence/filesystem";
 
 import { FileTreePanel } from "./FileTreePanel";
 import { PreviewPanel } from "./PreviewPanel";
-import { PropertiesPanel } from "./PropertiesPanel";
 import { TimelinePanel } from "./TimelinePanel";
-import { CommandPalette } from "@/editor/prompt/CommandPalette";
 import { VersionHistory } from "@/editor/history/VersionHistory";
-import { GenerateChat } from "@/editor/generate/GenerateChat";
 import { SettingsPanel } from "@/editor/settings/SettingsPanel";
 import { ExportModal } from "@/editor/export/ExportModal";
+import { AgentChat } from "@/editor/chat/AgentChat";
 
 // ---------------------------------------------------------------------------
 // EditorLayout
@@ -28,26 +26,17 @@ export const EditorLayout = () => {
 
   const undo = useStore((s) => s.undo);
 
-  const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
-  const toggleCommandPalette = useStore((s) => s.toggleCommandPalette);
-  const closeCommandPalette = useStore((s) => s.closeCommandPalette);
-
   const apiKey = useStore((s) => s.apiKey);
   const openSettingsPanel = useStore((s) => s.openSettingsPanel);
 
   const versionHistoryOpen = useStore((s) => s.versionHistoryOpen);
   const toggleVersionHistory = useStore((s) => s.toggleVersionHistory);
 
-  const generateChatOpen = useStore((s) => s.generateChatOpen);
-  const toggleGenerateChat = useStore((s) => s.toggleGenerateChat);
-
   const openExportModal = useStore((s) => s.openExportModal);
 
   const fileTreeVisible = useStore((s) => s.fileTreeVisible);
-  const propertiesPanelVisible = useStore((s) => s.propertiesPanelVisible);
   const timelineVisible = useStore((s) => s.timelineVisible);
   const toggleFileTree = useStore((s) => s.toggleFileTree);
-  const togglePropertiesPanel = useStore((s) => s.togglePropertiesPanel);
   const toggleTimeline = useStore((s) => s.toggleTimeline);
 
   const selectedElementId = useStore((s) => s.selectedElementId);
@@ -66,10 +55,14 @@ export const EditorLayout = () => {
         return;
       }
 
-      // Cmd+K / Ctrl+K — toggle command palette
+      // Cmd+K / Ctrl+K — focus agent chat input
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        toggleCommandPalette();
+        const ref = (window as unknown as Record<string, unknown>)
+          .__agentChatInputRef as
+          | RefObject<HTMLTextAreaElement | null>
+          | undefined;
+        ref?.current?.focus();
         return;
       }
 
@@ -90,11 +83,9 @@ export const EditorLayout = () => {
       // Shortcuts below must not fire inside text inputs
       if (inInput) return;
 
-      // Escape — priority: close palette → clear selection → exit edit mode
+      // Escape — priority: clear selection → exit edit mode
       if (e.key === "Escape") {
-        if (commandPaletteOpen) {
-          closeCommandPalette();
-        } else if (selectedElementId !== null) {
+        if (selectedElementId !== null) {
           clearSelection();
         } else if (editMode) {
           setEditMode(false);
@@ -108,12 +99,6 @@ export const EditorLayout = () => {
         return;
       }
 
-      // G — toggle generate chat
-      if (e.key === "g" && !e.metaKey && !e.ctrlKey) {
-        toggleGenerateChat();
-        return;
-      }
-
       // Space — toggle play / pause
       if (e.key === " " && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
@@ -124,12 +109,6 @@ export const EditorLayout = () => {
       // 1 — toggle file tree
       if (e.key === "1" && !e.metaKey && !e.ctrlKey) {
         toggleFileTree();
-        return;
-      }
-
-      // 2 — toggle properties panel
-      if (e.key === "2" && !e.metaKey && !e.ctrlKey) {
-        togglePropertiesPanel();
         return;
       }
 
@@ -150,22 +129,15 @@ export const EditorLayout = () => {
     isPlaying,
     setPlaying,
     undo,
-    commandPaletteOpen,
-    toggleCommandPalette,
-    closeCommandPalette,
     selectedElementId,
     toggleVersionHistory,
-    toggleGenerateChat,
     toggleFileTree,
-    togglePropertiesPanel,
     toggleTimeline,
   ]);
 
   return (
     <>
-      <CommandPalette />
       <VersionHistory />
-      <GenerateChat />
       <SettingsPanel />
       <ExportModal />
 
@@ -186,16 +158,6 @@ export const EditorLayout = () => {
             </span>
 
             <button
-              onClick={toggleGenerateChat}
-              aria-label="Toggle generate chat (G)"
-              title="Toggle generate chat (G)"
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs glass-hover ${generateChatOpen ? "glass-tint-blue text-blue-300" : "text-[var(--text-secondary)]"}`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Generate
-            </button>
-
-            <button
               onClick={openExportModal}
               aria-label="Export video"
               title="Export video"
@@ -214,15 +176,6 @@ export const EditorLayout = () => {
               className={`p-1.5 rounded glass-hover ${fileTreeVisible ? "glass-tint-blue" : ""}`}
             >
               <PanelLeft className="w-4 h-4 text-[var(--text-secondary)]" />
-            </button>
-
-            <button
-              onClick={togglePropertiesPanel}
-              aria-label="Toggle properties (2)"
-              title="Toggle properties (2)"
-              className={`p-1.5 rounded glass-hover ${propertiesPanelVisible ? "glass-tint-blue" : ""}`}
-            >
-              <PanelRight className="w-4 h-4 text-[var(--text-secondary)]" />
             </button>
 
             <button
@@ -274,15 +227,15 @@ export const EditorLayout = () => {
           </div>
         )}
 
-        {/* Content row — file tree | preview | properties */}
+        {/* Content row — file tree | preview | agent chat */}
         <div className="relative flex flex-1 min-h-0 overflow-hidden">
 
           {/* File tree — slides in/out via width transition */}
           <div
-            className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${fileTreeVisible ? "w-[240px]" : "w-0"}`}
+            className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${fileTreeVisible ? "w-[220px]" : "w-0"}`}
           >
             {/* Inner div holds the fixed width so content doesn't reflow during animation */}
-            <div className="w-[240px] h-full glass-panel border-r border-[var(--glass-border-subtle)] flex flex-col">
+            <div className="w-[220px] h-full glass-panel border-r border-[var(--glass-border-subtle)] flex flex-col">
               <div className="px-3 py-2 border-b border-[var(--glass-border-subtle)] shrink-0">
                 <span className="text-xs font-medium uppercase tracking-widest text-[var(--text-tertiary)]">
                   Files
@@ -297,13 +250,9 @@ export const EditorLayout = () => {
             <PreviewPanel />
           </div>
 
-          {/* Properties — slides in/out via width transition */}
-          <div
-            className={`shrink-0 overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${propertiesPanelVisible ? "w-[280px]" : "w-0"}`}
-          >
-            <div className="w-[280px] h-full">
-              <PropertiesPanel />
-            </div>
+          {/* Agent chat — right panel, always visible at fixed width */}
+          <div className="shrink-0 w-[360px]">
+            <AgentChat />
           </div>
         </div>
 

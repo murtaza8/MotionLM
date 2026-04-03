@@ -3,6 +3,19 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 import { parseTemporalMap } from "@/engine/temporal/parser";
 import type { TemporalMap } from "@/engine/temporal/types";
+import { AgentState } from "@/agent/types";
+import type { AgentMessage, TokenUsage } from "@/agent/types";
+import type { EditSuggestion } from "@/agent/proactive/post-edit-analyzer";
+
+// ---------------------------------------------------------------------------
+// VFS constants
+// ---------------------------------------------------------------------------
+
+export const VFS_MAX_FILES = 30;
+export const VFS_SOFT_SIZE_LIMIT = 5 * 1024 * 1024; // 5 MB in characters
+
+export const selectTotalCodeSize = (files: Map<string, VFSFile>): number =>
+  [...files.values()].reduce((sum, f) => sum + f.activeCode.length, 0);
 
 // ---------------------------------------------------------------------------
 // VFS types
@@ -34,6 +47,7 @@ interface VFSSlice {
   ) => void;
   setActiveFile: (path: string) => void;
   createFile: (path: string, code: string) => void;
+  deleteFile: (path: string) => void;
   setFileHandle: (path: string, handle: FileSystemFileHandle) => void;
   clearFileHandle: (path: string) => void;
 }
@@ -138,6 +152,7 @@ const createVFSSlice = (
   createFile: (path, code) =>
     set((state) => {
       if (state.files.has(path)) return {};
+      if (state.files.size >= VFS_MAX_FILES) return {};
       const updated = new Map(state.files);
       updated.set(path, {
         activeCode: code,
@@ -146,6 +161,18 @@ const createVFSSlice = (
         compilationError: null,
       });
       return { files: updated };
+    }),
+
+  deleteFile: (path) =>
+    set((state) => {
+      if (!state.files.has(path)) return {};
+      const updated = new Map(state.files);
+      updated.delete(path);
+      const nextActive =
+        state.activeFilePath === path
+          ? (updated.keys().next().value ?? null)
+          : state.activeFilePath;
+      return { files: updated, activeFilePath: nextActive };
     }),
 
   setFileHandle: (path, handle) =>
@@ -215,21 +242,21 @@ const createPlayerSlice = (
 
 interface SettingsSlice {
   apiKey: string | null;
-  modelPreference: "sonnet" | "opus";
+  modelId: string;
   theme: "dark";
   setApiKey: (key: string | null) => void;
-  setModelPreference: (model: "sonnet" | "opus") => void;
+  setModelId: (id: string) => void;
 }
 
 const createSettingsSlice = (
   set: (fn: (state: StoreState) => Partial<StoreState>) => void
 ): SettingsSlice => ({
   apiKey: null,
-  modelPreference: "sonnet",
+  modelId: "claude-sonnet-4-6",
   theme: "dark",
 
   setApiKey: (key) => set(() => ({ apiKey: key })),
-  setModelPreference: (model) => set(() => ({ modelPreference: model })),
+  setModelId: (id) => set(() => ({ modelId: id })),
 });
 
 // ---------------------------------------------------------------------------
@@ -428,6 +455,92 @@ const createHistorySlice = (
 });
 
 // ---------------------------------------------------------------------------
+// agentSlice
+// ---------------------------------------------------------------------------
+
+interface AgentSlice {
+  agentState: AgentState;
+  conversationHistory: AgentMessage[];
+  activeSessionId: string | null;
+  pendingToolCalls: string[];
+  tokenUsage: TokenUsage;
+  iterationCount: number;
+  thinkLog: string[];
+  proactiveSuggestions: EditSuggestion[];
+  setAgentState: (state: AgentState) => void;
+  appendMessage: (message: AgentMessage) => void;
+  setConversationHistory: (messages: AgentMessage[]) => void;
+  setTokenUsage: (usage: TokenUsage) => void;
+  incrementIteration: () => void;
+  resetSession: () => void;
+  appendThinkLog: (thought: string) => void;
+  setActiveSessionId: (id: string | null) => void;
+  addPendingToolCall: (toolUseId: string) => void;
+  removePendingToolCall: (toolUseId: string) => void;
+  setProactiveSuggestions: (suggestions: EditSuggestion[]) => void;
+  dismissSuggestion: (id: string) => void;
+}
+
+const createAgentSlice = (
+  set: (fn: (state: StoreState) => Partial<StoreState>) => void
+): AgentSlice => ({
+  agentState: AgentState.IDLE,
+  conversationHistory: [],
+  activeSessionId: null,
+  pendingToolCalls: [],
+  tokenUsage: { input: 0, output: 0, cached: 0 },
+  iterationCount: 0,
+  thinkLog: [],
+  proactiveSuggestions: [],
+
+  setAgentState: (state) => set(() => ({ agentState: state })),
+
+  appendMessage: (message) =>
+    set((s) => ({ conversationHistory: [...s.conversationHistory, message] })),
+
+  setConversationHistory: (messages) =>
+    set(() => ({ conversationHistory: messages })),
+
+  setTokenUsage: (usage) => set(() => ({ tokenUsage: usage })),
+
+  incrementIteration: () =>
+    set((s) => ({ iterationCount: s.iterationCount + 1 })),
+
+  resetSession: () =>
+    set(() => ({
+      agentState: AgentState.IDLE,
+      conversationHistory: [],
+      activeSessionId: `session-${Date.now()}`,
+      pendingToolCalls: [],
+      tokenUsage: { input: 0, output: 0, cached: 0 },
+      iterationCount: 0,
+      thinkLog: [],
+      proactiveSuggestions: [],
+    })),
+
+  appendThinkLog: (thought) =>
+    set((s) => ({ thinkLog: [...s.thinkLog, thought] })),
+
+  setActiveSessionId: (id) => set(() => ({ activeSessionId: id })),
+
+  addPendingToolCall: (toolUseId) =>
+    set((s) => ({ pendingToolCalls: [...s.pendingToolCalls, toolUseId] })),
+
+  removePendingToolCall: (toolUseId) =>
+    set((s) => ({
+      pendingToolCalls: s.pendingToolCalls.filter((id) => id !== toolUseId),
+    })),
+
+  setProactiveSuggestions: (suggestions) =>
+    set(() => ({ proactiveSuggestions: suggestions })),
+
+  dismissSuggestion: (id) =>
+    set((s) => ({
+      proactiveSuggestions: s.proactiveSuggestions.filter((sg) => sg.id !== id),
+    })),
+});
+
+// ---------------------------------------------------------------------------
 // Combined store type
 // ---------------------------------------------------------------------------
 
@@ -437,7 +550,8 @@ type StoreState = VFSSlice &
   SettingsSlice &
   SelectionSlice &
   HistorySlice &
-  UISlice;
+  UISlice &
+  AgentSlice;
 
 // ---------------------------------------------------------------------------
 // Persisted settings keys
@@ -445,7 +559,7 @@ type StoreState = VFSSlice &
 
 interface PersistedSettings {
   apiKey: string | null;
-  modelPreference: "sonnet" | "opus";
+  modelId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +576,7 @@ export const useStore = create<StoreState>()(
       ...createSelectionSlice(set as Parameters<typeof createSelectionSlice>[0]),
       ...createHistorySlice(set as Parameters<typeof createHistorySlice>[0]),
       ...createUISlice(set as Parameters<typeof createUISlice>[0]),
+      ...createAgentSlice(set as Parameters<typeof createAgentSlice>[0]),
     }),
     {
       name: "motionlm-settings",
@@ -469,7 +584,7 @@ export const useStore = create<StoreState>()(
       // Only persist settings fields — VFS and player state is ephemeral
       partialize: (state): PersistedSettings => ({
         apiKey: state.apiKey,
-        modelPreference: state.modelPreference,
+        modelId: state.modelId,
       }),
     }
   )

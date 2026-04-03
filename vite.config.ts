@@ -5,6 +5,16 @@ import { resolve } from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  optimizeDeps: {
+    include: [
+      "@radix-ui/react-popover",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-toggle",
+      "@radix-ui/react-tooltip",
+      "@floating-ui/dom",
+      "@floating-ui/react-dom",
+    ],
+  },
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
   },

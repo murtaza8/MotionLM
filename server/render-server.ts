@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { z } from "zod";
 
-import { handleRender, getRenderJob } from "./render-handler.ts";
+import { handleRender, getRenderJob, handleRenderStill } from "./render-handler.ts";
 
 // ---------------------------------------------------------------------------
 // Input validation schema
@@ -22,6 +22,17 @@ const RenderRequestSchema = z.object({
   codec: z
     .enum(["h264", "h265", "vp8", "vp9", "prores", "gif"])
     .default("h264"),
+});
+
+const RenderStillSchema = z.object({
+  files: z.record(z.string(), z.string()),
+  /** VFS path of the entry file, e.g. "/billiard-shot.tsx". When omitted the
+   *  handler falls back to /main.tsx → main.tsx → first file. */
+  entryPath: z.string().optional(),
+  compositionId: z.string().default("Main"),
+  frame: z.number().int().min(0),
+  width: z.number().int().positive().default(854),
+  height: z.number().int().positive().default(480),
 });
 
 // ---------------------------------------------------------------------------
@@ -56,6 +67,27 @@ app.post("/api/render", async (req, res) => {
   }
 
   res.json({ ok: true, renderId: result.renderId });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/render/still — render a single frame as PNG (base64)
+// ---------------------------------------------------------------------------
+
+app.post("/api/render/still", async (req, res) => {
+  const parsed = RenderStillSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const message = parsed.error.issues.map((i) => i.message).join("; ");
+    res.status(400).json({ ok: false, error: `Invalid request: ${message}` });
+    return;
+  }
+
+  const result = await handleRenderStill(parsed.data);
+  if (!result.ok) {
+    res.status(500).json({ ok: false, error: result.error });
+    return;
+  }
+
+  res.json({ ok: true, data: result.data });
 });
 
 // ---------------------------------------------------------------------------

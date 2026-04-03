@@ -10,11 +10,6 @@ import type { StoreEditActions } from "@/ai/diff-parser";
 import type { StoreSnapshot } from "@/ai/context-assembler";
 import type { VFSFile } from "@/store";
 
-const MODEL_IDS: Record<"sonnet" | "opus", string> = {
-  sonnet: "claude-sonnet-4-20250514",
-  opus: "claude-opus-4-20250514",
-};
-
 export interface EditStreamHandle {
   /** Returns true on success, false if an error was set. */
   submit: (instruction: string) => Promise<boolean>;
@@ -30,7 +25,7 @@ export interface EditStreamHandle {
  */
 export const useEditStream = (): EditStreamHandle => {
   const apiKey = useStore((s) => s.apiKey);
-  const modelPreference = useStore((s) => s.modelPreference);
+  const modelId = useStore((s) => s.modelId);
 
   const setDraftCode = useStore((s) => s.setDraftCode);
   const setCompilationStatus = useStore((s) => s.setCompilationStatus);
@@ -90,7 +85,7 @@ export const useEditStream = (): EditStreamHandle => {
       const editContext = assembleEditContext(storeSnapshot);
       const systemPrompt = buildSystemPrompt();
       const messages = assembleMessages(editContext, instruction.trim(), systemPrompt);
-      const model = MODEL_IDS[modelPreference];
+      const model = modelId;
 
       let accumulated = "";
       let streamError: string | null = null;
@@ -169,7 +164,7 @@ export const useEditStream = (): EditStreamHandle => {
     },
     [
       apiKey,
-      modelPreference,
+      modelId,
       setDraftCode,
       setCompilationStatus,
       promoteDraft,

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Player } from "@remotion/player";
 import type { PlayerRef, CallbackListener } from "@remotion/player";
 
-import { compileWithVFS } from "@/engine/compiler";
+import { compileAsync } from "@/engine/compiler-bridge";
 import { useStore } from "@/store";
 import {
   SIMPLE_TEXT_SOURCE,
@@ -30,6 +30,17 @@ export const PreviewPanel = () => {
   const setCurrentFrame = useStore((s) => s.setCurrentFrame);
   const durationInFrames = useStore((s) => s.durationInFrames);
   const activeFilePath = useStore((s) => s.activeFilePath);
+  const activeFileStatus = useStore((s) =>
+    s.activeFilePath ? s.files.get(s.activeFilePath)?.compilationStatus ?? "idle" : "idle"
+  );
+  const activeFileError = useStore((s) =>
+    s.activeFilePath ? s.files.get(s.activeFilePath)?.compilationError ?? null : null
+  );
+  const activeFileCode = useStore((s) => {
+    if (!s.activeFilePath) return "";
+    const f = s.files.get(s.activeFilePath);
+    return f ? (f.draftCode ?? f.activeCode) : "";
+  });
   const editMode = useStore((s) => s.editMode);
 
   // A stable string key that changes when any file's content changes,
@@ -67,11 +78,14 @@ export const PreviewPanel = () => {
   }, [setActiveCode, setActiveFile, setCompositionMeta]);
 
   // Compile whenever any VFS file content changes or the active file switches.
-  // Reading files from getState() inside the effect avoids stale closure issues
-  // while keeping filesKey (the serialised hash) as the reactive trigger.
+  // compileAsync offloads the Babel transform to a Web Worker; new Function()
+  // runs on the main thread once the worker responds.
+  // The stale-check (compilingPath !== activeFilePath) discards results from
+  // races where the active file changed while a compile was in-flight.
   useEffect(() => {
     if (!activeFilePath) return;
 
+    const compilingPath = activeFilePath;
     const { files } = useStore.getState();
     const sourcesMap = new Map<string, string>();
     for (const [path, file] of files) {
@@ -79,16 +93,20 @@ export const PreviewPanel = () => {
       if (src) sourcesMap.set(path, src);
     }
 
-    setCompilationStatus(activeFilePath, "compiling");
-    const result = compileWithVFS(activeFilePath, sourcesMap);
+    setCompilationStatus(compilingPath, "compiling");
 
-    if (result.ok) {
-      setComponent(() => result.Component);
-      setCompilationStatus(activeFilePath, "success");
-    } else {
-      setComponent(null);
-      setCompilationStatus(activeFilePath, "error", result.error);
-    }
+    void compileAsync(compilingPath, sourcesMap).then((result) => {
+      // Discard stale result if active file switched mid-compile
+      if (useStore.getState().activeFilePath !== compilingPath) return;
+
+      if (result.ok) {
+        setComponent(() => result.Component);
+        setCompilationStatus(compilingPath, "success");
+      } else {
+        setComponent(null);
+        setCompilationStatus(compilingPath, "error", result.error);
+      }
+    });
   }, [filesKey, activeFilePath, setCompilationStatus]);
 
   // Measure the panel container and compute the largest Player size that fits
@@ -168,8 +186,16 @@ export const PreviewPanel = () => {
       className="flex h-full w-full items-center justify-center overflow-hidden p-4"
     >
       {!component || !hasSize ? (
-        <span className="text-sm text-[var(--text-tertiary)]">
-          {!component ? "Compiling..." : ""}
+        <span className="text-sm text-[var(--text-tertiary)] text-center px-4">
+          {activeFileStatus === "compiling"
+            ? "Compiling..."
+            : activeFileStatus === "error" && !activeFileCode.trim()
+            ? "File is empty — describe what to build in the chat."
+            : activeFileStatus === "error" && activeFileError
+            ? activeFileError
+            : !hasSize
+            ? ""
+            : "Compiling..."}
         </span>
       ) : (
         // playerContainerRef is sized to exactly the computed Player dimensions.

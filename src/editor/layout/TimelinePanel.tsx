@@ -1,6 +1,10 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useStore } from "@/store";
+import { getOrCreateSession } from "@/agent/active-session";
+import { generateGhostTracks } from "@/agent/proactive/ghost-track-generator";
+import type { GhostTrack } from "@/agent/proactive/ghost-track-generator";
 import type { TemporalNode } from "@/engine/temporal/types";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +30,7 @@ const SEQUENCE_COLORS = [
 // ---------------------------------------------------------------------------
 
 function rulerInterval(totalFrames: number): number {
+  if (totalFrames <= 0) return 1;
   const candidates = [1, 5, 10, 15, 30, 60, 90, 150, 300, 600];
   return candidates.find((c) => totalFrames / c <= 10) ?? 600;
 }
@@ -41,6 +46,13 @@ export const TimelinePanel = () => {
   const selectedElementId = useStore((s) => s.selectedElementId);
   const setCurrentFrame = useStore((s) => s.setCurrentFrame);
   const setSelection = useStore((s) => s.setSelection);
+
+  const { proactiveSuggestions, dismissSuggestion } = useStore(
+    useShallow((s) => ({
+      proactiveSuggestions: s.proactiveSuggestions,
+      dismissSuggestion: s.dismissSuggestion,
+    }))
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
@@ -110,6 +122,20 @@ export const TimelinePanel = () => {
       }
     },
     [temporalMap, currentFrame, setSelection]
+  );
+
+  const ghostTracks = useMemo(
+    () => generateGhostTracks(proactiveSuggestions, temporalMap, totalFrames),
+    [proactiveSuggestions, temporalMap, totalFrames]
+  );
+
+  const handleGhostApply = useCallback(
+    (ghost: GhostTrack) => {
+      const session = getOrCreateSession();
+      void session.send(ghost.suggestion.applyInstruction);
+      dismissSuggestion(ghost.suggestion.id);
+    },
+    [dismissSuggestion]
   );
 
   const interval = rulerInterval(totalFrames);
@@ -191,6 +217,47 @@ export const TimelinePanel = () => {
             );
           })}
         </div>
+
+        {/* Ghost tracks */}
+        {ghostTracks.map((ghost) => {
+          const from = ghost.startFrame;
+          const duration = ghost.endFrame - ghost.startFrame;
+          const laneTop = ghost.track * (ROW_HEIGHT + ROW_GAP);
+          return (
+            <div
+              key={ghost.id}
+              className="absolute border-2 border-dashed border-amber-500 rounded bg-amber-950/30 opacity-50 overflow-hidden flex items-center justify-between px-1"
+              style={{
+                left: `${frameToPercent(from)}%`,
+                width: `${frameToPercent(duration)}%`,
+                top: RULER_HEIGHT + laneTop,
+                height: ROW_HEIGHT,
+                minWidth: 4,
+              }}
+              title={ghost.label}
+            >
+              <span className="text-[9px] text-amber-300 truncate flex-1 pointer-events-none">{ghost.label}</span>
+              <div className="flex gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleGhostApply(ghost); }}
+                  className="text-[9px] text-amber-300 hover:text-amber-100 px-0.5"
+                  title="Apply suggestion"
+                >
+                  ✓
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); dismissSuggestion(ghost.suggestion.id); }}
+                  className="text-[9px] text-amber-400 hover:text-amber-200 px-0.5"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          );
+        })}
 
         {/* Empty state */}
         {sequences.length === 0 && (
